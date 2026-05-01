@@ -63,7 +63,7 @@ class EditorScreen extends ConsumerWidget {
           TextButton(
             onPressed: () async {
               if (state.isDirty && !await _confirmDiscard(context)) return;
-              final result = await FilePicker.platform.pickFiles(
+              final result = await FilePicker.pickFiles(
                 type: FileType.custom,
                 allowedExtensions: const ['m4b'],
               );
@@ -82,7 +82,7 @@ class EditorScreen extends ConsumerWidget {
             onPressed: state.audiobook == null
                 ? null
                 : () async {
-                    final result = await FilePicker.platform.saveFile(
+                    final result = await FilePicker.saveFile(
                       type: FileType.custom,
                       allowedExtensions: const ['m4b'],
                       fileName: filename,

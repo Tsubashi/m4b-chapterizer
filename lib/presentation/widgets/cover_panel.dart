@@ -35,7 +35,7 @@ class CoverPanel extends ConsumerWidget {
             TextButton(
               key: const ValueKey('cover.replace'),
               onPressed: () async {
-                final result = await FilePicker.platform.pickFiles(
+                final result = await FilePicker.pickFiles(
                   type: FileType.custom,
                   allowedExtensions: const ['png', 'jpg', 'jpeg'],
                 );
