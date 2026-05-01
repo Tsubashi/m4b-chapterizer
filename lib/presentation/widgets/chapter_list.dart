@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/chapter.dart';
 import '../providers/editor_state.dart';
 import '../util/duration_format.dart';
 
@@ -23,38 +24,15 @@ class ChapterList extends ConsumerWidget {
             itemCount: book.chapters.length,
             itemBuilder: (context, i) {
               final chapter = book.chapters[i];
-              return ListTile(
+              return _ChapterRow(
                 key: ValueKey('chapters.row.$i'),
+                index: i,
+                chapter: chapter,
                 selected: i == selected,
                 onTap: () =>
                     ref.read(selectedChapterProvider.notifier).state = i,
-                leading: Text('${i + 1}'),
-                title: TextField(
-                  key: ValueKey('chapters.title.$i'),
-                  controller: TextEditingController(text: chapter.title),
-                  onTap: () =>
-                      ref.read(selectedChapterProvider.notifier).state = i,
-                  onSubmitted: (v) => notifier.renameChapter(i, v),
-                  onChanged: (v) => notifier.renameChapter(i, v),
-                  decoration: const InputDecoration(isDense: true),
-                ),
-                trailing: SizedBox(
-                  width: 110,
-                  child: TextField(
-                    key: ValueKey('chapters.start.$i'),
-                    controller:
-                        TextEditingController(text: formatDuration(chapter.start)),
-                    onTap: () =>
-                        ref.read(selectedChapterProvider.notifier).state = i,
-                    onSubmitted: (v) {
-                      try {
-                        notifier.setChapterStart(i, parseDuration(v));
-                      } on FormatException {
-                        // leave field as-is
-                      }
-                    },
-                  ),
-                ),
+                onTitleChanged: (v) => notifier.renameChapter(i, v),
+                onStartChanged: (d) => notifier.setChapterStart(i, d),
               );
             },
           ),
@@ -76,6 +54,91 @@ class ChapterList extends ConsumerWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _ChapterRow extends StatefulWidget {
+  const _ChapterRow({
+    super.key,
+    required this.index,
+    required this.chapter,
+    required this.selected,
+    required this.onTap,
+    required this.onTitleChanged,
+    required this.onStartChanged,
+  });
+
+  final int index;
+  final Chapter chapter;
+  final bool selected;
+  final VoidCallback onTap;
+  final ValueChanged<String> onTitleChanged;
+  final ValueChanged<Duration> onStartChanged;
+
+  @override
+  State<_ChapterRow> createState() => _ChapterRowState();
+}
+
+class _ChapterRowState extends State<_ChapterRow> {
+  late final TextEditingController _titleController;
+  late final TextEditingController _startController;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleController = TextEditingController(text: widget.chapter.title);
+    _startController =
+        TextEditingController(text: formatDuration(widget.chapter.start));
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChapterRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.chapter.title != _titleController.text) {
+      _titleController.text = widget.chapter.title;
+    }
+    final formatted = formatDuration(widget.chapter.start);
+    if (formatted != _startController.text) {
+      _startController.text = formatted;
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _startController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      selected: widget.selected,
+      onTap: widget.onTap,
+      leading: Text('${widget.index + 1}'),
+      title: TextField(
+        key: ValueKey('chapters.title.${widget.index}'),
+        controller: _titleController,
+        onTap: widget.onTap,
+        onChanged: widget.onTitleChanged,
+        decoration: const InputDecoration(isDense: true),
+      ),
+      trailing: SizedBox(
+        width: 110,
+        child: TextField(
+          key: ValueKey('chapters.start.${widget.index}'),
+          controller: _startController,
+          onTap: widget.onTap,
+          onSubmitted: (v) {
+            try {
+              widget.onStartChanged(parseDuration(v));
+            } on FormatException {
+              // leave field as-is
+            }
+          },
+        ),
+      ),
     );
   }
 }

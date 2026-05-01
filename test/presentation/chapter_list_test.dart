@@ -71,4 +71,29 @@ void main() {
     expect(container.read(editorProvider).audiobook?.chapters.first.title,
         'Renamed');
   });
+
+  testWidgets('typing into a chapter title preserves cursor at end',
+      (tester) async {
+    await _setUp(tester);
+    final fieldFinder = find.byKey(const ValueKey('chapters.title.0'));
+
+    // Tap the field to focus it, then type two characters.
+    await tester.tap(fieldFinder);
+    await tester.pump();
+    final state = tester.state<EditableTextState>(
+      find.descendant(of: fieldFinder, matching: find.byType(EditableText)),
+    );
+    final controller = state.widget.controller;
+    // Start from a known empty value to make assertions deterministic.
+    controller.text = '';
+    await tester.pump();
+
+    await tester.enterText(fieldFinder, 'A');
+    await tester.pump();
+    await tester.enterText(fieldFinder, 'AB');
+    await tester.pump();
+
+    expect(controller.text, 'AB');
+    expect(controller.selection.baseOffset, controller.text.length);
+  });
 }
