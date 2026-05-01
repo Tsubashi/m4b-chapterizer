@@ -4,6 +4,7 @@ import 'package:meta/meta.dart';
 import '../../domain/bookbinder.dart';
 import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
+import '../../domain/models/cover.dart';
 
 @immutable
 class EditorState {
@@ -148,6 +149,18 @@ class EditorNotifier extends Notifier<EditorState> {
       );
     });
   }
+
+  void clearCover() {
+    final book = state.audiobook;
+    if (book == null) return;
+    state = state.copyWith(
+      audiobook: book.copyWith(clearCover: true),
+      isDirty: true,
+    );
+  }
+
+  void replaceCover(Cover cover) =>
+      _updateBook((b) => b.copyWith(cover: cover));
 
   void _updateBook(Audiobook Function(Audiobook book) f) {
     final book = state.audiobook;
