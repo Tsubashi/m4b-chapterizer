@@ -65,8 +65,13 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  assets:
-    - assets/bin/
+  # NOTE: assets/bin/ is intentionally NOT bundled via Flutter assets.
+  # The ffmpeg/ffprobe binaries in assets/bin/<platform>/ are copied directly
+  # into the platform-specific app bundle at build time:
+  #   - macOS: by the "Bundle ffmpeg binaries" Run Script phase in
+  #     macos/Runner.xcodeproj/project.pbxproj, which copies them to
+  #     <App>.app/Contents/Resources/ at build time.
+  # Run `dart run tool/fetch_ffmpeg.dart` before building to populate them.
 
   # To add assets to your application, add an assets section, like this:
   # assets:

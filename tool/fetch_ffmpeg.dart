@@ -1,4 +1,16 @@
 // Downloads pinned ffmpeg/ffprobe binaries into assets/bin/<platform>/.
+//
+// `assets/bin/<platform>/` is a *staging area* — the binaries there are NOT
+// shipped via Flutter's `rootBundle`. Instead, the platform-specific build
+// scripts copy them directly into the application bundle at build time:
+//   - macOS: the "Bundle ffmpeg binaries" Run Script build phase in
+//     macos/Runner.xcodeproj/project.pbxproj copies them into
+//     <App>.app/Contents/Resources/ during `flutter build macos` (or `run`).
+//
+// This script must be run BEFORE `flutter build macos` or `flutter run -d
+// macos`. If the staged binaries are missing at build time, the Xcode build
+// phase fails with a clear error pointing back to this script.
+//
 // Run once per development machine and once per CI build:
 //   dart run tool/fetch_ffmpeg.dart
 //
@@ -203,5 +215,6 @@ Future<void> main() async {
     stdout.writeln('  -> $destPath');
   }
   stdout.writeln(
-      'Done. Make sure assets/bin/$key/ is included in the Flutter asset bundle.');
+      'Done. The platform build scripts (e.g. the macOS Run Script phase) '
+      'will copy assets/bin/$key/ into the app bundle at build time.');
 }

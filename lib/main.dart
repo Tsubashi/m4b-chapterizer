@@ -7,18 +7,14 @@ import 'data/process_runner.dart';
 import 'presentation/app.dart';
 import 'presentation/providers/editor_state.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final resolver = BundledBinaryResolver();
-  await resolver.resolveFfmpeg();
-  await resolver.resolveFfprobe();
+void main() {
   runApp(
     ProviderScope(
       overrides: [
         bookbinderProvider.overrideWithValue(
           FfmpegBookbinder(
             runner: const SystemProcessRunner(),
-            binaries: resolver,
+            binaries: BundledBinaryResolver(),
           ),
         ),
       ],
