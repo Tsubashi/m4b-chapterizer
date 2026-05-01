@@ -7,6 +7,8 @@ import 'package:mocktail/mocktail.dart';
 import 'package:m4b_chapterizer/data/binary_resolver.dart';
 import 'package:m4b_chapterizer/data/ffmpeg_bookbinder.dart';
 import 'package:m4b_chapterizer/data/process_runner.dart';
+import 'package:m4b_chapterizer/domain/models/audiobook.dart';
+import 'package:m4b_chapterizer/domain/models/chapter.dart';
 
 class _MockProcessRunner extends Mock implements ProcessRunner {}
 
@@ -117,6 +119,81 @@ void main() {
         bookbinder.read('/tmp/missing.m4b'),
         throwsA(isA<BookbinderException>()),
       );
+    });
+  });
+
+  group('FfmpegBookbinder.write', () {
+    final book = Audiobook.validated(
+      title: 'New Title',
+      author: 'New Author',
+      chapters: const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+      ],
+      totalDuration: const Duration(seconds: 10),
+    );
+
+    test('invokes ffmpeg with -map_metadata, -map_chapters, and -c copy',
+        () async {
+      when(() => runner.run(
+            executable: '/usr/bin/ffmpeg',
+            arguments: any(named: 'arguments'),
+          )).thenAnswer((_) async => ProcessOutput(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            stdoutBytes: Uint8List(0),
+          ));
+
+      try {
+        await bookbinder.write(
+          sourcePath: '/tmp/in.m4b',
+          destinationPath: '${Directory.systemTemp.path}/out.m4b',
+          audiobook: book,
+        );
+      } catch (_) {
+        // Mocked runner reports ffmpeg success without producing the temp
+        // output file, so the rename step throws. We only care about the
+        // arguments captured below.
+      }
+
+      final captured = verify(() => runner.run(
+            executable: '/usr/bin/ffmpeg',
+            arguments: captureAny(named: 'arguments'),
+          )).captured;
+      final args = captured.single as List<String>;
+      expect(args, contains('-map_metadata'));
+      expect(args, contains('-map_chapters'));
+      expect(args, contains('-c'));
+      expect(args, contains('copy'));
+    });
+
+    test('atomic write: leaves destination untouched when ffmpeg fails',
+        () async {
+      final destPath = '${Directory.systemTemp.path}/out.m4b';
+      // Pre-existing file we should NOT overwrite or clobber.
+      File(destPath).writeAsStringSync('original-bytes');
+
+      when(() => runner.run(
+            executable: '/usr/bin/ffmpeg',
+            arguments: any(named: 'arguments'),
+          )).thenAnswer((_) async => ProcessOutput(
+            exitCode: 1,
+            stdout: '',
+            stderr: 'simulated failure',
+            stdoutBytes: Uint8List(0),
+          ));
+
+      await expectLater(
+        bookbinder.write(
+          sourcePath: '/tmp/in.m4b',
+          destinationPath: destPath,
+          audiobook: book,
+        ),
+        throwsA(isA<BookbinderException>()),
+      );
+      expect(File(destPath).readAsStringSync(), 'original-bytes');
+      File(destPath).deleteSync();
     });
   });
 }

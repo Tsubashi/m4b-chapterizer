@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import '../domain/bookbinder.dart';
 import '../domain/models/audiobook.dart';
 import '../domain/models/cover.dart';
 import 'binary_resolver.dart';
+import 'ffmetadata_codec.dart';
 import 'ffmpeg_invocation.dart' as inv;
 import 'ffprobe_codec.dart';
 import 'process_runner.dart';
@@ -67,7 +69,49 @@ class FfmpegBookbinder implements Bookbinder {
     required String sourcePath,
     required String destinationPath,
     required Audiobook audiobook,
-  }) {
-    throw UnimplementedError('FfmpegBookbinder.write — Task 13');
+  }) async {
+    final tempDir = await Directory.systemTemp.createTemp('m4b-write-');
+    final metadataPath = '${tempDir.path}/metadata.txt';
+    final tempOutPath = '${tempDir.path}/out.m4b';
+    String? coverPath;
+
+    try {
+      await File(metadataPath)
+          .writeAsString(const FfmetadataCodec().encode(audiobook));
+
+      if (audiobook.cover != null) {
+        final ext = audiobook.cover!.mimeType == 'image/png' ? 'png' : 'jpg';
+        coverPath = '${tempDir.path}/cover.$ext';
+        await File(coverPath).writeAsBytes(audiobook.cover!.bytes);
+      }
+
+      final result = await _runner.run(
+        executable: _binaries.ffmpeg,
+        arguments: inv.writeArguments(
+          sourcePath: sourcePath,
+          metadataPath: metadataPath,
+          coverPath: coverPath,
+          outputPath: tempOutPath,
+        ),
+      );
+      if (result.exitCode != 0) {
+        throw BookbinderException(
+          'ffmpeg failed writing $destinationPath',
+          stderr: result.stderr,
+        );
+      }
+
+      // Atomic move into place. dart:io's File.rename is atomic when both
+      // paths share the same filesystem; for cross-FS we fall back to copy+delete.
+      final tempOutFile = File(tempOutPath);
+      try {
+        await tempOutFile.rename(destinationPath);
+      } on FileSystemException {
+        await tempOutFile.copy(destinationPath);
+        await tempOutFile.delete();
+      }
+    } finally {
+      await tempDir.delete(recursive: true);
+    }
   }
 }
