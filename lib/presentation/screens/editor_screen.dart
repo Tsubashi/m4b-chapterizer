@@ -44,9 +44,11 @@ class EditorScreen extends ConsumerWidget {
     final filename = state.path?.split(Platform.pathSeparator).last ?? '';
 
     // Wire playback source whenever the path changes.
-    if (state.path != null) {
-      playback.setSource(state.path!);
-    }
+    ref.listen<String?>(editorProvider.select((s) => s.path), (previous, next) {
+      if (next != null && next != previous) {
+        playback.setSource(next);
+      }
+    });
 
     return Scaffold(
       appBar: AppBar(

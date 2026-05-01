@@ -40,6 +40,31 @@ class _NoopPlayback implements PlaybackController {
   Future<void> dispose() async {}
 }
 
+class _RecordingPlayback implements PlaybackController {
+  final List<String> setSourceCalls = [];
+  @override
+  Future<void> setSource(String path) async {
+    setSourceCalls.add(path);
+  }
+
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> seek(Duration position) async {}
+  @override
+  Duration get position => Duration.zero;
+  @override
+  bool get playing => false;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
   testWidgets('shows the dirty marker after editing', (tester) async {
     final container = ProviderContainer(overrides: [
@@ -58,5 +83,33 @@ void main() {
     container.read(editorProvider.notifier).setTitle('Edited');
     await tester.pump();
     expect(find.text('•'), findsOneWidget);
+  });
+
+  testWidgets('setSource is invoked once per path, not per rebuild',
+      (tester) async {
+    final playback = _RecordingPlayback();
+    final container = ProviderContainer(overrides: [
+      bookbinderProvider.overrideWithValue(_Stub()),
+      playbackControllerProvider.overrideWithValue(playback),
+    ]);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: EditorScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    // No path yet, so no setSource calls.
+    expect(playback.setSourceCalls, isEmpty);
+
+    // Open a file: setSource should be called exactly once.
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpAndSettle();
+    expect(playback.setSourceCalls, ['/tmp/x.m4b']);
+
+    // Trigger a rebuild without changing the path: setSource must not be
+    // called again.
+    container.read(editorProvider.notifier).setTitle('Edited');
+    await tester.pump();
+    expect(playback.setSourceCalls, ['/tmp/x.m4b']);
   });
 }
