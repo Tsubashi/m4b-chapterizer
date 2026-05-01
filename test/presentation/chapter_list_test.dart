@@ -72,6 +72,15 @@ void main() {
         'Renamed');
   });
 
+  testWidgets('lays out without overflow when surface is narrow',
+      (tester) async {
+    addTearDown(() => tester.view.resetPhysicalSize());
+    tester.view.physicalSize = const Size(180, 600);
+    tester.view.devicePixelRatio = 1.0;
+    await _setUp(tester);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('typing into a chapter title preserves cursor at end',
       (tester) async {
     await _setUp(tester);

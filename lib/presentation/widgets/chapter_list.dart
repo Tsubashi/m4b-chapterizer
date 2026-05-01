@@ -38,8 +38,10 @@ class ChapterList extends ConsumerWidget {
             },
           ),
         ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        OverflowBar(
+          alignment: MainAxisAlignment.spaceEvenly,
+          overflowAlignment: OverflowBarAlignment.center,
+          spacing: 8,
           children: [
             TextButton(
               key: const ValueKey('chapters.add'),
@@ -118,27 +120,36 @@ class _ChapterRowState extends State<_ChapterRow> {
       selected: widget.selected,
       onTap: widget.onTap,
       leading: Text('${widget.index + 1}'),
-      title: TextField(
-        key: ValueKey('chapters.title.${widget.index}'),
-        controller: _titleController,
-        onTap: widget.onTap,
-        onChanged: widget.onTitleChanged,
-        decoration: const InputDecoration(isDense: true),
-      ),
-      trailing: SizedBox(
-        width: 110,
-        child: TextField(
-          key: ValueKey('chapters.start.${widget.index}'),
-          controller: _startController,
-          onTap: widget.onTap,
-          onSubmitted: (v) {
-            try {
-              widget.onStartChanged(parseDuration(v));
-            } on FormatException {
-              // leave field as-is
-            }
-          },
-        ),
+      title: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: ValueKey('chapters.title.${widget.index}'),
+              controller: _titleController,
+              onTap: widget.onTap,
+              onChanged: widget.onTitleChanged,
+              decoration: const InputDecoration(isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 110),
+              child: TextField(
+                key: ValueKey('chapters.start.${widget.index}'),
+                controller: _startController,
+                onTap: widget.onTap,
+                onSubmitted: (v) {
+                  try {
+                    widget.onStartChanged(parseDuration(v));
+                  } on FormatException {
+                    // leave field as-is
+                  }
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
