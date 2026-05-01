@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/cover.dart';
 import '../providers/editor_state.dart';
+import '../util/file_picker_errors.dart';
 
 class CoverPanel extends ConsumerWidget {
   const CoverPanel({super.key});
@@ -35,9 +36,12 @@ class CoverPanel extends ConsumerWidget {
             TextButton(
               key: const ValueKey('cover.replace'),
               onPressed: () async {
-                final result = await FilePicker.pickFiles(
-                  type: FileType.custom,
-                  allowedExtensions: const ['png', 'jpg', 'jpeg'],
+                final result = await guardFilePicker(
+                  context,
+                  () => FilePicker.pickFiles(
+                    type: FileType.custom,
+                    allowedExtensions: const ['png', 'jpg', 'jpeg'],
+                  ),
                 );
                 final picked = result?.files.single.path;
                 if (picked == null) return;

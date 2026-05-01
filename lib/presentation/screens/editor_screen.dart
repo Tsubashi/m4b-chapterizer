@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
+import '../util/file_picker_errors.dart';
 import '../widgets/chapter_list.dart';
 import '../widgets/cover_panel.dart';
 import '../widgets/metadata_form.dart';
@@ -63,9 +64,13 @@ class EditorScreen extends ConsumerWidget {
           TextButton(
             onPressed: () async {
               if (state.isDirty && !await _confirmDiscard(context)) return;
-              final result = await FilePicker.pickFiles(
-                type: FileType.custom,
-                allowedExtensions: const ['m4b'],
+              if (!context.mounted) return;
+              final result = await guardFilePicker(
+                context,
+                () => FilePicker.pickFiles(
+                  type: FileType.custom,
+                  allowedExtensions: const ['m4b'],
+                ),
               );
               final path = result?.files.single.path;
               if (path == null) return;
@@ -82,10 +87,13 @@ class EditorScreen extends ConsumerWidget {
             onPressed: state.audiobook == null
                 ? null
                 : () async {
-                    final result = await FilePicker.saveFile(
-                      type: FileType.custom,
-                      allowedExtensions: const ['m4b'],
-                      fileName: filename,
+                    final result = await guardFilePicker(
+                      context,
+                      () => FilePicker.saveFile(
+                        type: FileType.custom,
+                        allowedExtensions: const ['m4b'],
+                        fileName: filename,
+                      ),
                     );
                     if (result == null) return;
                     await notifier.saveAs(result);
