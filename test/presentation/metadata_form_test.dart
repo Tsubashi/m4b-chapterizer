@@ -8,10 +8,10 @@ import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/widgets/metadata_form.dart';
 
 class _StubBookbinder implements Bookbinder {
-  _StubBookbinder(this._book);
-  final Audiobook _book;
+  _StubBookbinder(this.book);
+  Audiobook book;
   @override
-  Future<Audiobook> read(String sourcePath) async => _book;
+  Future<Audiobook> read(String sourcePath) async => book;
   @override
   Future<void> write({required String sourcePath, required String destinationPath, required Audiobook audiobook}) async {}
 }
@@ -66,5 +66,39 @@ void main() {
 
     expect(container.read(editorProvider).audiobook?.title, 'Brand New');
     expect(container.read(editorProvider).isDirty, isTrue);
+  });
+
+  testWidgets('re-hydrates controllers when a different file is opened',
+      (tester) async {
+    final fake = _StubBookbinder(Audiobook.validated(
+      title: 'A Title',
+      author: 'An Author',
+      chapters: const [Chapter(title: 'C', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 5),
+    ));
+    final container = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: MetadataForm())),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextField, 'A Title'), findsOneWidget);
+
+    // Swap out the stub's audiobook and open a different path.
+    fake.book = Audiobook.validated(
+      title: 'Another Title',
+      author: 'Other Author',
+      chapters: const [Chapter(title: 'C2', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 7),
+    );
+    await container.read(editorProvider.notifier).open('/tmp/y.m4b');
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(TextField, 'Another Title'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'A Title'), findsNothing);
   });
 }

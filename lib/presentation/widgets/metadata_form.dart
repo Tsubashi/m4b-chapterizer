@@ -19,7 +19,7 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
   late final _year = TextEditingController();
   late final _description = TextEditingController();
 
-  bool _hydrated = false;
+  String? _hydratedForPath;
 
   void _hydrateFromState(EditorState state) {
     final book = state.audiobook;
@@ -48,9 +48,9 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(editorProvider);
-    if (!_hydrated && state.audiobook != null) {
+    if (state.audiobook != null && state.path != _hydratedForPath) {
       _hydrateFromState(state);
-      _hydrated = true;
+      _hydratedForPath = state.path;
     }
     final notifier = ref.read(editorProvider.notifier);
     return Padding(
