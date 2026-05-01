@@ -18,10 +18,17 @@ class PlaybackControls extends ConsumerWidget {
       padding: const EdgeInsets.all(8),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(controller.playing ? Icons.pause : Icons.play_arrow),
-            onPressed: () =>
-                controller.playing ? controller.pause() : controller.play(),
+          StreamBuilder<bool>(
+            stream: controller.playingStream,
+            initialData: controller.playing,
+            builder: (context, snapshot) {
+              final playing = snapshot.data ?? false;
+              return IconButton(
+                icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+                onPressed: () =>
+                    playing ? controller.pause() : controller.play(),
+              );
+            },
           ),
           const SizedBox(width: 12),
           StreamBuilder<Duration>(

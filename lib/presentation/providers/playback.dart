@@ -9,6 +9,7 @@ abstract class PlaybackController {
   Duration get position;
   bool get playing;
   Stream<Duration> get positionStream;
+  Stream<bool> get playingStream;
   Future<void> dispose();
 }
 
@@ -36,6 +37,8 @@ class JustAudioPlaybackController implements PlaybackController {
   bool get playing => _player.playing;
   @override
   Stream<Duration> get positionStream => _player.positionStream;
+  @override
+  Stream<bool> get playingStream => _player.playingStream;
   @override
   Future<void> dispose() => _player.dispose();
 }

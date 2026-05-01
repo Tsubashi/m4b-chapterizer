@@ -35,6 +35,8 @@ class _NoopPlayback implements PlaybackController {
   @override
   Stream<Duration> get positionStream => const Stream.empty();
   @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
   Future<void> dispose() async {}
 }
 
