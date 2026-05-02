@@ -50,6 +50,33 @@ void main() {
     expect(container.read(editorProvider).audiobook?.chapters.length, 3);
   });
 
+  testWidgets('selected chapter number has a filled background',
+      (tester) async {
+    final container = await _setUp(tester);
+
+    // Initially chapter 0 is selected. Its number container should have a
+    // primary-colored background; the unselected one should be transparent.
+    Container numberContainer(int i) => tester.widget<Container>(
+          find.byKey(ValueKey('chapters.number.$i')),
+        );
+
+    final selectedColor =
+        (numberContainer(0).decoration as BoxDecoration).color;
+    final unselectedColor =
+        (numberContainer(1).decoration as BoxDecoration).color;
+    expect(selectedColor, isNot(Colors.transparent));
+    expect(unselectedColor, Colors.transparent);
+
+    // Now switch selection to chapter 1.
+    container.read(selectedChapterProvider.notifier).state = 1;
+    await tester.pump();
+
+    expect((numberContainer(0).decoration as BoxDecoration).color,
+        Colors.transparent);
+    expect((numberContainer(1).decoration as BoxDecoration).color,
+        isNot(Colors.transparent));
+  });
+
   testWidgets('Delete button removes the selected chapter', (tester) async {
     final container = await _setUp(tester);
     await tester.tap(find.byKey(const ValueKey('chapters.row.1')));

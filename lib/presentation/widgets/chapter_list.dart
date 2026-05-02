@@ -131,10 +131,27 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
       selected: widget.selected,
       onTap: widget.onTap,
-      leading: Text('${widget.index + 1}'),
+      leading: Container(
+        key: ValueKey('chapters.number.${widget.index}'),
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.selected ? scheme.primary : Colors.transparent,
+        ),
+        child: Text(
+          '${widget.index + 1}',
+          style: TextStyle(
+            color: widget.selected ? scheme.onPrimary : null,
+            fontWeight: widget.selected ? FontWeight.bold : null,
+          ),
+        ),
+      ),
       title: Row(
         children: [
           Expanded(
