@@ -249,4 +249,35 @@ void main() {
     // Selection moved as well.
     expect(container.read(selectedChapterProvider), 1);
   });
+
+  testWidgets('focus → mutate → blur on chapter title pushes one undo step',
+      (tester) async {
+    final (:container, playback: _) = await _setUp(tester);
+
+    expect(container.read(editorProvider).canUndo, isFalse);
+
+    // Focus the chapter 0 title field; mutate via the field's onChanged
+    // (simulated by directly entering text); blur by tapping a different row.
+    await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('chapters.title.0')),
+      'Renamed',
+    );
+    await tester.pump();
+
+    // Still in the session; no undo step yet.
+    expect(container.read(editorProvider).canUndo, isFalse);
+
+    // Blur by focusing a different field.
+    await tester.tap(find.byKey(const ValueKey('chapters.title.1')));
+    await tester.pumpAndSettle();
+
+    expect(container.read(editorProvider).canUndo, isTrue);
+    container.read(editorProvider.notifier).undo();
+    expect(
+      container.read(editorProvider).audiobook!.chapters.first.title,
+      'Alpha',
+    );
+  });
 }

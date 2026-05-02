@@ -91,6 +91,7 @@ class _ChapterRow extends ConsumerStatefulWidget {
 
 class _ChapterRowState extends ConsumerState<_ChapterRow> {
   late final FocusNode _titleFocusNode;
+  late final FocusNode _startFocusNode;
   late final TextEditingController _titleController;
   late final TextEditingController _startController;
   // Cached so it remains accessible in dispose() after the widget unmounts.
@@ -99,12 +100,31 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
   @override
   void initState() {
     super.initState();
-    _titleFocusNode = FocusNode();
+    _titleFocusNode = FocusNode()..addListener(_onTitleFocusChanged);
+    _startFocusNode = FocusNode()..addListener(_onStartFocusChanged);
     _titleController = TextEditingController(text: widget.chapter.title);
     _startController =
         TextEditingController(text: formatDuration(widget.chapter.start));
     _focusNodesMap = ref.read(chapterTitleFocusNodesProvider);
     _focusNodesMap[widget.index] = _titleFocusNode;
+  }
+
+  void _onTitleFocusChanged() {
+    final notifier = ref.read(editorProvider.notifier);
+    if (_titleFocusNode.hasFocus) {
+      notifier.beginFieldEdit();
+    } else {
+      notifier.endFieldEdit();
+    }
+  }
+
+  void _onStartFocusChanged() {
+    final notifier = ref.read(editorProvider.notifier);
+    if (_startFocusNode.hasFocus) {
+      notifier.beginFieldEdit();
+    } else {
+      notifier.endFieldEdit();
+    }
   }
 
   @override
@@ -127,6 +147,7 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
   void dispose() {
     _focusNodesMap.remove(widget.index);
     _titleFocusNode.dispose();
+    _startFocusNode.dispose();
     _titleController.dispose();
     _startController.dispose();
     super.dispose();
@@ -173,6 +194,7 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
               constraints: const BoxConstraints(maxWidth: 110),
               child: TextField(
                 key: ValueKey('chapters.start.${widget.index}'),
+                focusNode: _startFocusNode,
                 controller: _startController,
                 onTap: widget.onTap,
                 onSubmitted: (v) {
