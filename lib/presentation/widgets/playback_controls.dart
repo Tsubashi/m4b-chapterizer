@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
+import '../providers/waveform.dart';
 import '../util/duration_format.dart';
 import 'chapter_list.dart';
 import 'chapter_scrubber.dart';
@@ -17,6 +18,14 @@ class PlaybackControls extends ConsumerWidget {
     final notifier = ref.read(editorProvider.notifier);
     final selectedIndex = ref.watch(selectedChapterProvider);
     final book = state.audiobook;
+
+    final peaksAsync = state.path == null
+        ? const AsyncValue<List<double>>.data(<double>[])
+        : ref.watch(waveformPeaksProvider(state.path!));
+    final peaks = peaksAsync.maybeWhen(
+      data: (p) => p,
+      orElse: () => const <double>[],
+    );
 
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -34,6 +43,7 @@ class PlaybackControls extends ConsumerWidget {
                   totalDuration: book.totalDuration,
                   chapterStarts: [for (final c in book.chapters) c.start],
                   onSeek: controller.seek,
+                  peaks: peaks,
                 );
               },
             ),
