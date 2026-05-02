@@ -8,13 +8,15 @@ import 'presentation/app.dart';
 import 'presentation/providers/editor_state.dart';
 
 void main() {
+  final resolver = BundledBinaryResolver();
   runApp(
     ProviderScope(
       overrides: [
+        binaryResolverProvider.overrideWithValue(resolver),
         bookbinderProvider.overrideWithValue(
           FfmpegBookbinder(
             runner: const SystemProcessRunner(),
-            binaries: BundledBinaryResolver(),
+            binaries: resolver,
           ),
         ),
       ],

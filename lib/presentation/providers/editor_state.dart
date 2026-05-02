@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
 
+import '../../data/binary_resolver.dart';
 import '../../domain/bookbinder.dart';
 import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
@@ -34,6 +35,12 @@ class EditorState {
 final bookbinderProvider = Provider<Bookbinder>((ref) {
   throw StateError(
     'bookbinderProvider must be overridden at the app or test scope',
+  );
+});
+
+final binaryResolverProvider = Provider<BinaryResolver>((ref) {
+  throw StateError(
+    'binaryResolverProvider must be overridden at the app or test scope',
   );
 });
 
