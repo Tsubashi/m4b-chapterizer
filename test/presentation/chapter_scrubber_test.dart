@@ -181,4 +181,48 @@ void main() {
       expect(seeked, isNot(const Duration(seconds: 30)));
     });
   });
+
+  group('ChapterScrubber drag-to-seek', () {
+    testWidgets('drag fires onSeek exactly once at drag end',
+        (tester) async {
+      var seekCount = 0;
+      Duration? lastSeek;
+      const total = Duration(seconds: 100);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        onSeek: (d) {
+          seekCount++;
+          lastSeek = d;
+        },
+        width: 400,
+      ));
+
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      final size = tester.getSize(scrubber);
+      final start = topLeft + Offset(size.width * 0.10, size.height / 2);
+      final gesture = await tester.startGesture(start);
+      // Move to ~60% in three steps, pump between each.
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(80, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(40, 0));
+      await tester.pump();
+      // No seeks yet.
+      expect(seekCount, 0);
+      await gesture.up();
+      await tester.pump();
+
+      expect(seekCount, 1);
+      // 10% start + 200px move at 400 width: x ≈ 240. Fraction ≈ (240-12)/(400-24) ≈ 0.606.
+      // ~60.6 seconds. Allow ±3 seconds tolerance.
+      final expected = total * 0.606;
+      expect(
+        (lastSeek! - expected).abs() <= const Duration(seconds: 3),
+        isTrue,
+        reason: 'expected ~$expected, got $lastSeek',
+      );
+    });
+  });
 }

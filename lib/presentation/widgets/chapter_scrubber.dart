@@ -26,12 +26,15 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
   static const double _horizontalPadding = 12;
   static const double _snapPx = 6;
 
+  Duration? _dragPosition;
+
   Duration _displayedPosition() {
+    final p = _dragPosition ?? widget.position;
     final total = widget.totalDuration;
     if (total <= Duration.zero) return Duration.zero;
-    if (widget.position < Duration.zero) return Duration.zero;
-    if (widget.position > total) return total;
-    return widget.position;
+    if (p < Duration.zero) return Duration.zero;
+    if (p > total) return total;
+    return p;
   }
 
   Duration _positionForX(double x, double width) {
@@ -81,6 +84,30 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
               details.localPosition.dx,
               constraints.maxWidth,
             ));
+          },
+          onHorizontalDragStart: (details) {
+            setState(() {
+              _dragPosition = _positionForX(
+                details.localPosition.dx,
+                constraints.maxWidth,
+              );
+            });
+          },
+          onHorizontalDragUpdate: (details) {
+            setState(() {
+              _dragPosition = _positionForX(
+                details.localPosition.dx,
+                constraints.maxWidth,
+              );
+            });
+          },
+          onHorizontalDragEnd: (_) {
+            final settled = _dragPosition;
+            setState(() => _dragPosition = null);
+            if (settled != null) widget.onSeek(settled);
+          },
+          onHorizontalDragCancel: () {
+            setState(() => _dragPosition = null);
           },
           child: CustomPaint(
             painter: _ScrubberPainter(
