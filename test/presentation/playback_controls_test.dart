@@ -9,6 +9,7 @@ import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
+import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
 import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
 
 class _StubBookbinder implements Bookbinder {
@@ -25,8 +26,22 @@ class _StubBookbinder implements Bookbinder {
 }
 
 class _FakePlayback implements PlaybackController {
+  _FakePlayback() {
+    _positionController = StreamController<Duration>.broadcast();
+    _playingController = StreamController<bool>.broadcast();
+  }
+
+  late final StreamController<Duration> _positionController;
+  late final StreamController<bool> _playingController;
+  final List<Duration> seeks = [];
   Duration _pos = const Duration(seconds: 7);
   bool _playing = false;
+
+  void emitPosition(Duration p) {
+    _pos = p;
+    _positionController.add(p);
+  }
+
   @override
   Future<void> setSource(String path) async {}
   @override
@@ -34,17 +49,24 @@ class _FakePlayback implements PlaybackController {
   @override
   Future<void> pause() async => _playing = false;
   @override
-  Future<void> seek(Duration position) async => _pos = position;
+  Future<void> seek(Duration position) async {
+    _pos = position;
+    seeks.add(position);
+  }
+
   @override
   Duration get position => _pos;
   @override
   bool get playing => _playing;
   @override
-  Stream<Duration> get positionStream => const Stream.empty();
+  Stream<Duration> get positionStream => _positionController.stream;
   @override
-  Stream<bool> get playingStream => Stream.value(_playing);
+  Stream<bool> get playingStream => _playingController.stream;
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    await _positionController.close();
+    await _playingController.close();
+  }
 }
 
 void main() {
@@ -103,6 +125,56 @@ void main() {
 
     expect(find.byIcon(Icons.pause), findsOneWidget);
     expect(find.byIcon(Icons.play_arrow), findsNothing);
+  });
+
+  group('PlaybackControls scrubber integration', () {
+    testWidgets('renders a ChapterScrubber when an audiobook is loaded',
+        (tester) async {
+      final fake = _StubBookbinder();
+      final fakePlayback = _FakePlayback();
+      final container = ProviderContainer(
+        overrides: [
+          bookbinderProvider.overrideWithValue(fake),
+          playbackControllerProvider.overrideWithValue(fakePlayback),
+        ],
+      );
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ChapterScrubber), findsOneWidget);
+    });
+
+    testWidgets('tapping the scrubber calls controller.seek',
+        (tester) async {
+      final fake = _StubBookbinder();
+      final fakePlayback = _FakePlayback();
+      final container = ProviderContainer(
+        overrides: [
+          bookbinderProvider.overrideWithValue(fake),
+          playbackControllerProvider.overrideWithValue(fakePlayback),
+        ],
+      );
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+      ));
+      await tester.pumpAndSettle();
+
+      final scrubberFinder = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubberFinder);
+      final size = tester.getSize(scrubberFinder);
+      await tester.tapAt(
+        topLeft + Offset(size.width * 0.5, size.height / 2),
+      );
+      await tester.pump();
+
+      expect(fakePlayback.seeks.length, 1);
+    });
   });
 }
 
