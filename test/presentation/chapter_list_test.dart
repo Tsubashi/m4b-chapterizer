@@ -163,6 +163,50 @@ void main() {
     expect(controller.selection.baseOffset, controller.text.length);
   });
 
+  testWidgets('reverts field text when start input fails to parse',
+      (tester) async {
+    final (:container, playback: _) = await _setUp(tester);
+
+    final startField = find.byKey(const ValueKey('chapters.start.1'));
+    await tester.tap(startField);
+    await tester.pump();
+    await tester.enterText(startField, 'not a duration');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    // Field reverts to the chapter's existing start. No snackbar shown.
+    final controller = tester.widget<TextField>(startField).controller!;
+    expect(controller.text, '00:00:10.000');
+    expect(find.byType(SnackBar), findsNothing);
+    // Audiobook unchanged.
+    expect(
+      container.read(editorProvider).audiobook!.chapters[1].start,
+      const Duration(seconds: 10),
+    );
+  });
+
+  testWidgets(
+      'shows the firstNotZero snackbar when chapter 0 is moved off zero',
+      (tester) async {
+    await _setUp(tester);
+
+    final startField = find.byKey(const ValueKey('chapters.start.0'));
+    await tester.tap(startField);
+    await tester.pump();
+    await tester.enterText(startField, '00:00:05.000');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.textContaining('First chapter must start'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('shows snackbar and reverts field on duplicate start', (tester) async {
     final (:container, playback: _) = await _setUp(tester);
 

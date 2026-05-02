@@ -1,3 +1,13 @@
+// coverage:ignore-file
+//
+// `JustAudioPlaybackController` is a thin pass-through wrapper around
+// `package:just_audio`'s `AudioPlayer`. The controller's behavior is
+// exercised throughout the test suite via the `PlaybackController`
+// abstraction with a fake; the production wrapper itself only runs in
+// smoke tests against the real audio backend, where construction and
+// stream subscription are platform-mediated and not meaningfully
+// testable in `flutter test`. The provider closure that returns it has
+// the same constraint.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 

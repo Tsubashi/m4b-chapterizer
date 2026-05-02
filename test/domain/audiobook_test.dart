@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
+import 'package:m4b_chapterizer/domain/models/cover.dart';
 
 void main() {
   group('Audiobook', () {
@@ -49,11 +52,14 @@ void main() {
     });
 
     test('rejects non-monotonic chapter starts', () {
+      // The first chapter starts at zero (so the chapters.first check passes);
+      // the second is BEFORE the first, which trips strictly-increasing.
       expect(
         () => Audiobook.validated(
           chapters: const [
-            Chapter(title: 'A', start: Duration(minutes: 5)),
+            Chapter(title: 'A', start: Duration.zero),
             Chapter(title: 'B', start: Duration(minutes: 3)),
+            Chapter(title: 'C', start: Duration(minutes: 2)),
           ],
           totalDuration: totalDuration,
         ),
@@ -64,7 +70,10 @@ void main() {
     test('rejects chapter start past total duration', () {
       expect(
         () => Audiobook.validated(
-          chapters: const [Chapter(title: 'A', start: Duration(minutes: 31))],
+          chapters: const [
+            Chapter(title: 'A', start: Duration.zero),
+            Chapter(title: 'B', start: Duration(minutes: 31)),
+          ],
           totalDuration: totalDuration,
         ),
         throwsArgumentError,
@@ -81,6 +90,67 @@ void main() {
       expect(updated.title, 'B');
       expect(updated.chapters, [chapter1]);
       expect(updated.totalDuration, totalDuration);
+    });
+
+    test('endOf throws RangeError for a negative or out-of-range index', () {
+      const book = Audiobook(
+        chapters: [chapter1, chapter2],
+        totalDuration: totalDuration,
+      );
+      expect(() => book.endOf(-1), throwsRangeError);
+      expect(() => book.endOf(2), throwsRangeError);
+    });
+
+    test('rejects a first chapter that does not start at zero', () {
+      expect(
+        () => Audiobook.validated(
+          chapters: const [
+            Chapter(title: 'A', start: Duration(seconds: 1)),
+            Chapter(title: 'B', start: Duration(minutes: 5)),
+          ],
+          totalDuration: totalDuration,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('value equality across all fields', () {
+      final cover1 = Cover(bytes: Uint8List.fromList([1, 2, 3]), mimeType: 'image/png');
+      final cover2 = Cover(bytes: Uint8List.fromList([1, 2, 3]), mimeType: 'image/png');
+      final a = Audiobook(
+        title: 'T',
+        author: 'Au',
+        narrator: 'N',
+        album: 'Al',
+        genre: 'G',
+        description: 'D',
+        year: 2024,
+        cover: cover1,
+        chapters: const [chapter1, chapter2],
+        totalDuration: totalDuration,
+      );
+      final b = Audiobook(
+        title: 'T',
+        author: 'Au',
+        narrator: 'N',
+        album: 'Al',
+        genre: 'G',
+        description: 'D',
+        year: 2024,
+        cover: cover2,
+        chapters: const [chapter1, chapter2],
+        totalDuration: totalDuration,
+      );
+      expect(a, equals(b));
+      expect(a.hashCode, b.hashCode);
+      // Identity short-circuit also works.
+      // ignore: unrelated_type_equality_checks
+      expect(a == a, isTrue);
+      // A field difference breaks equality.
+      expect(a == a.copyWith(title: 'Other'), isFalse);
+      // Different runtime type breaks equality.
+      // ignore: unrelated_type_equality_checks
+      expect(a == 'not an audiobook', isFalse);
     });
   });
 

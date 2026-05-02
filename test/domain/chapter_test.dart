@@ -22,5 +22,12 @@ void main() {
       expect(renamed.title, 'B');
       expect(renamed.start, const Duration(seconds: 10));
     });
+
+    test('toString includes both fields for diagnostic output', () {
+      const chapter = Chapter(title: 'Intro', start: Duration(seconds: 5));
+      final str = chapter.toString();
+      expect(str, contains('Intro'));
+      expect(str, contains('Chapter('));
+    });
   });
 }

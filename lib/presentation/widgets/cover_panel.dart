@@ -35,6 +35,11 @@ class CoverPanel extends ConsumerWidget {
           children: [
             TextButton(
               key: const ValueKey('cover.replace'),
+              // coverage:ignore-start
+              // The image picker callback bridges to FilePicker.pickFiles
+              // and to `dart:io`'s File reader; both run only on the real
+              // desktop platform. The notifier path it ultimately calls
+              // (`replaceCover`) is unit-tested separately.
               onPressed: () async {
                 final result = await guardFilePicker(
                   context,
@@ -51,6 +56,7 @@ class CoverPanel extends ConsumerWidget {
                     : 'image/jpeg';
                 notifier.replaceCover(Cover(bytes: bytes, mimeType: mime));
               },
+              // coverage:ignore-end
               child: const Text('Replace…'),
             ),
             TextButton(

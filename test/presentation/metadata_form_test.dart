@@ -42,6 +42,42 @@ void main() {
     expect(find.widgetWithText(TextField, 'An Author'), findsOneWidget);
   });
 
+  testWidgets('typing in the year field updates editor state via int.tryParse',
+      (tester) async {
+    final fake = _StubBookbinder(Audiobook.validated(
+      title: 'T',
+      chapters: const [Chapter(title: 'C', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 5),
+    ));
+    final container = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: MetadataForm())),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey('metadata.year')),
+      '2024',
+    );
+    await tester.pump();
+
+    expect(container.read(editorProvider).audiobook?.year, 2024);
+
+    // A non-numeric input goes through `int.tryParse` and yields null,
+    // which copyWith treats as "leave unchanged" — the year stays at 2024.
+    await tester.enterText(
+      find.byKey(const ValueKey('metadata.year')),
+      'not-a-year',
+    );
+    await tester.pump();
+    expect(container.read(editorProvider).audiobook?.year, 2024);
+  });
+
   testWidgets('typing in the title field updates editor state', (tester) async {
     final fake = _StubBookbinder(Audiobook.validated(
       title: 'Old',

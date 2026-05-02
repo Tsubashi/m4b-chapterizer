@@ -112,6 +112,23 @@ void main() {
         reason: 'chapter mutations must not cause a re-extract');
   });
 
+  test('returns an empty peak list when no audiobook is loaded', () async {
+    final spy = _RecordingExtractor();
+    final container = ProviderContainer(overrides: [
+      bookbinderProvider.overrideWithValue(_StubBookbinder(_book('First'))),
+      playbackControllerProvider.overrideWithValue(_NullPlayback()),
+      waveformExtractorProvider.overrideWithValue(spy),
+    ]);
+    addTearDown(container.dispose);
+
+    // No `open` — audiobook is null. Peaks must short-circuit to [] and
+    // never invoke the extractor.
+    final peaks = await container
+        .read(waveformPeaksProvider('/tmp/never-opened.m4b').future);
+    expect(peaks, isEmpty);
+    expect(spy.extractCallCount, 0);
+  });
+
   test('opening a different file triggers a new extract', () async {
     final spy = _RecordingExtractor();
     final stub = _StubBookbinder(_book('First'))..swapTo = _book('Second');

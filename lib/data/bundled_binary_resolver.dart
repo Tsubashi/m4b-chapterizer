@@ -12,7 +12,7 @@ import 'binary_resolver.dart';
 /// `<App>.app/Contents/Resources/{ffmpeg,ffprobe}`.
 class BundledBinaryResolver implements BinaryResolver {
   BundledBinaryResolver({String? executablePathOverride})
-      : _executablePath = executablePathOverride ?? Platform.resolvedExecutable;
+      : _executablePath = executablePathOverride ?? Platform.resolvedExecutable; // coverage:ignore-line
 
   final String _executablePath;
 
@@ -23,10 +23,14 @@ class BundledBinaryResolver implements BinaryResolver {
       final contentsDir = p.dirname(macOSDir);
       return p.join(contentsDir, 'Resources', name);
     }
-    // For Windows and Linux we ship the binary alongside the executable.
+    // coverage:ignore-start
+    // The Windows/Linux branch can't be reached when the test suite runs
+    // on macOS CI. The macOS branch above is covered by
+    // `bundled_binary_resolver_test.dart`.
     final dir = p.dirname(_executablePath);
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     return p.join(dir, '$name$exeSuffix');
+    // coverage:ignore-end
   }
 
   @override

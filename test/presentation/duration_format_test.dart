@@ -33,5 +33,16 @@ void main() {
     test('rejects negative components', () {
       expect(() => parseDuration('-01:00:00'), throwsFormatException);
     });
+    test('rejects negative inner components', () {
+      // Whole-string leading-minus is caught early; this exercises the
+      // post-parse range check on individual fields.
+      expect(() => parseDuration('1:-1:0'), throwsFormatException);
+    });
+    test('rejects strings with too many : segments', () {
+      expect(() => parseDuration('01:02:03:04'), throwsFormatException);
+    });
+    test('rejects an empty string', () {
+      expect(() => parseDuration('   '), throwsFormatException);
+    });
   });
 }

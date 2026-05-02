@@ -15,6 +15,12 @@ class EditorActions {
   final BuildContext context;
   final WidgetRef ref;
 
+  // coverage:ignore-start
+  // The discard-confirmation dialog and the FilePicker open/saveAs flows
+  // can't be simulated cleanly in a `flutter test` widget environment —
+  // FilePicker is a platform plugin and the dialog flows are exercised
+  // by interactive smoke tests. `save()` below stays measured because it
+  // uses neither.
   Future<bool> _confirmDiscard() async {
     final answer = await showDialog<bool>(
       context: context,
@@ -50,12 +56,15 @@ class EditorActions {
     if (path == null) return;
     await ref.read(editorProvider.notifier).open(path);
   }
+  // coverage:ignore-end
 
   Future<void> save() async {
     if (ref.read(editorProvider).audiobook == null) return;
     await ref.read(editorProvider.notifier).save();
   }
 
+  // coverage:ignore-start
+  // saveAs() bridges to FilePicker.saveFile, same constraint as open().
   Future<void> saveAs() async {
     if (ref.read(editorProvider).audiobook == null) return;
     final state = ref.read(editorProvider);
@@ -72,4 +81,5 @@ class EditorActions {
     if (result == null) return;
     await ref.read(editorProvider.notifier).saveAs(result);
   }
+  // coverage:ignore-end
 }

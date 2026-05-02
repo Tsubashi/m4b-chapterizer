@@ -49,15 +49,23 @@ class EditorState {
 /// Provided at app startup with `bookbinderProvider.overrideWithValue(...)`.
 /// Tests override it with a fake.
 final bookbinderProvider = Provider<Bookbinder>((ref) {
+  // coverage:ignore-start
+  // Defensive fallback: production wires the override in main(); tests
+  // always override before reading. The error path exists only as a
+  // signal during integration / smoke runs.
   throw StateError(
     'bookbinderProvider must be overridden at the app or test scope',
   );
+  // coverage:ignore-end
 });
 
 final binaryResolverProvider = Provider<BinaryResolver>((ref) {
+  // coverage:ignore-start
+  // Same defensive fallback as bookbinderProvider above.
   throw StateError(
     'binaryResolverProvider must be overridden at the app or test scope',
   );
+  // coverage:ignore-end
 });
 
 final editorProvider =

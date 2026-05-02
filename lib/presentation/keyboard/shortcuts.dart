@@ -255,6 +255,10 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             _focusNode.requestFocus();
             return null;
           }),
+          // coverage:ignore-start
+          // Cmd+O / Cmd+Shift+S bridge to EditorActions.open / saveAs,
+          // which surface the FilePicker. The EditorActions methods
+          // themselves are coverage-ignored above for the same reason.
           OpenFileIntent: CallbackAction<OpenFileIntent>(onInvoke: (_) {
             EditorActions(context, ref).open();
             return null;
@@ -263,6 +267,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             EditorActions(context, ref).saveAs();
             return null;
           }),
+          // coverage:ignore-end
           FocusSelectedChapterTitleIntent:
               _BareKeyAction<FocusSelectedChapterTitleIntent>((_) {
             final idx = ref.read(selectedChapterProvider);

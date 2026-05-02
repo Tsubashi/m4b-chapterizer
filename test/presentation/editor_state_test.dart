@@ -1,8 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
+import 'package:m4b_chapterizer/domain/models/cover.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
@@ -125,6 +128,59 @@ void main() {
     final state = container.read(editorProvider);
     expect(state.audiobook?.title, 'Edited');
     expect(state.isDirty, isTrue);
+  });
+
+  test('the rest of the metadata setters update the matching field', () async {
+    final fake = _FakeBookbinder(book);
+    final container = makeContainer(fake);
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/foo.m4b');
+    final n = container.read(editorProvider.notifier);
+    n.setAuthor('AU');
+    n.setNarrator('NA');
+    n.setAlbum('AL');
+    n.setGenre('GE');
+    n.setDescription('DE');
+    n.setYear(1999);
+    final book2 = container.read(editorProvider).audiobook!;
+    expect(book2.author, 'AU');
+    expect(book2.narrator, 'NA');
+    expect(book2.album, 'AL');
+    expect(book2.genre, 'GE');
+    expect(book2.description, 'DE');
+    expect(book2.year, 1999);
+    expect(container.read(editorProvider).isDirty, isTrue);
+  });
+
+  test('replaceCover sets the cover and pushes one undo step', () async {
+    final fake = _FakeBookbinder(book);
+    final container = makeContainer(fake);
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/foo.m4b');
+    final cover = Cover(
+      bytes: Uint8List.fromList([1, 2, 3]),
+      mimeType: 'image/png',
+    );
+    container.read(editorProvider.notifier).replaceCover(cover);
+    expect(container.read(editorProvider).audiobook?.cover, cover);
+    expect(container.read(editorProvider).canUndo, isTrue);
+    container.read(editorProvider.notifier).undo();
+    expect(container.read(editorProvider).audiobook?.cover, isNull);
+  });
+
+  test('setter on a notifier with no audiobook is a no-op', () {
+    final fake = _FakeBookbinder(book);
+    final container = makeContainer(fake);
+    addTearDown(container.dispose);
+    // Note: no `open` — audiobook stays null.
+    final n = container.read(editorProvider.notifier);
+    n.setTitle('whatever');
+    n.addChapter();
+    n.deleteChapter(0);
+    n.setChapterStart(0, const Duration(seconds: 1));
+    n.clearCover();
+    expect(container.read(editorProvider).audiobook, isNull);
+    expect(container.read(editorProvider).isDirty, isFalse);
   });
 
   test('save writes back to the loaded path and clears dirty', () async {
@@ -631,6 +687,62 @@ void main() {
       container.read(editorProvider.notifier).undo();
       // After undo, chapter list = [A, B, C]. The first differing index
       // between [A, NEW, B, C] (post-add) and [A, B, C] (post-undo) is 1.
+      expect(container.read(selectedChapterProvider), 1);
+    });
+
+    test('undo clamps selection when undo shrinks the chapter list', () async {
+      // Place the playhead near the end so addChapter inserts at the tail.
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 25);
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+      // After add: chapters = [A, B, C, NEW@25] — selection moved to 3.
+      expect(container.read(selectedChapterProvider), 3);
+      expect(
+        container.read(editorProvider).audiobook!.chapters.length,
+        4,
+      );
+
+      container.read(editorProvider.notifier).undo();
+      // After undo: chapters = [A, B, C]. The first differing index between
+      // [A, B, C, NEW] (length 4) and [A, B, C] (length 3) is 3 — past the
+      // new last index. Selection must be clamped to 2.
+      expect(container.read(editorProvider).audiobook!.chapters.length, 3);
+      expect(container.read(selectedChapterProvider), 2);
+    });
+
+    test('redo clamps selection when redo shrinks the chapter list', () async {
+      // Set up a deletion: selection on the final chapter, deleteChapter,
+      // then undo (restores 3 chapters), then redo (returns to 2). The redo
+      // path enters its own clamp branch when the diff index lands past the
+      // new last index.
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 2;
+
+      container.read(editorProvider.notifier).deleteChapter(2);
+      // After delete: 2 chapters; selection clamped to 1 already.
+      container.read(editorProvider.notifier).undo();
+      // Restored to 3 chapters.
+      expect(
+        container.read(editorProvider).audiobook!.chapters.length,
+        3,
+      );
+      // Park the selection on the to-be-removed last chapter again.
+      container.read(selectedChapterProvider.notifier).state = 2;
+
+      container.read(editorProvider.notifier).redo();
+      // After redo: 2 chapters; selection clamped to 1.
+      expect(
+        container.read(editorProvider).audiobook!.chapters.length,
+        2,
+      );
       expect(container.read(selectedChapterProvider), 1);
     });
 

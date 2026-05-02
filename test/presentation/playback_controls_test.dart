@@ -99,6 +99,41 @@ void main() {
     );
   });
 
+  testWidgets('tapping the play/pause button toggles via the controller',
+      (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _StreamingFakePlayback();
+    addTearDown(fakePlayback.close);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    // Initial state: not playing → play button shown.
+    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+
+    // Tap to play.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tester.pump();
+    expect(fakePlayback.playing, isTrue);
+
+    // Stream the new state to update the icon, then tap to pause.
+    fakePlayback.emitPlaying(true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.pause));
+    await tester.pump();
+    expect(fakePlayback.playing, isFalse);
+  });
+
   testWidgets('play/pause icon tracks playingStream', (tester) async {
     final fake = _StubBookbinder();
     final fakePlayback = _StreamingFakePlayback();
