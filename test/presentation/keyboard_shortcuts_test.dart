@@ -352,6 +352,33 @@ void _registerWidgetTests() {
       expect(h.container.read(selectedChapterProvider), 0);
     });
 
+    testWidgets('ArrowDown seeks to the next chapter\'s start',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 0;
+      // Establish a baseline by clearing prior seek records.
+      h.playback.seeks.clear();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+
+      expect(h.container.read(selectedChapterProvider), 1);
+      expect(h.playback.seeks, [const Duration(seconds: 10)]);
+    });
+
+    testWidgets('ArrowUp at index 0 does not move selection or seek',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 0;
+      h.playback.seeks.clear();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pump();
+
+      expect(h.container.read(selectedChapterProvider), 0);
+      expect(h.playback.seeks, isEmpty);
+    });
+
     testWidgets(
         'Backspace deletes a character when a TextField is focused',
         (tester) async {

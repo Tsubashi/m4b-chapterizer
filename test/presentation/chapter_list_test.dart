@@ -5,6 +5,7 @@ import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
+import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
 
 class _StubBookbinder implements Bookbinder {
@@ -16,7 +17,32 @@ class _StubBookbinder implements Bookbinder {
   Future<void> write({required String sourcePath, required String destinationPath, required Audiobook audiobook}) async {}
 }
 
-Future<ProviderContainer> _setUp(WidgetTester tester) async {
+class _RecordingPlayback implements PlaybackController {
+  final List<Duration> seeks = [];
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+  }
+  @override
+  Duration get position => Duration.zero;
+  @override
+  bool get playing => false;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> dispose() async {}
+}
+
+Future<({ProviderContainer container, _RecordingPlayback playback})>
+    _setUp(WidgetTester tester) async {
   final fake = _StubBookbinder(Audiobook.validated(
     chapters: const [
       Chapter(title: 'Alpha', start: Duration.zero),
@@ -24,8 +50,12 @@ Future<ProviderContainer> _setUp(WidgetTester tester) async {
     ],
     totalDuration: const Duration(seconds: 30),
   ));
+  final playback = _RecordingPlayback();
   final container = ProviderContainer(
-    overrides: [bookbinderProvider.overrideWithValue(fake)],
+    overrides: [
+      bookbinderProvider.overrideWithValue(fake),
+      playbackControllerProvider.overrideWithValue(playback),
+    ],
   );
   await container.read(editorProvider.notifier).open('/tmp/x.m4b');
   await tester.pumpWidget(UncontrolledProviderScope(
@@ -33,7 +63,7 @@ Future<ProviderContainer> _setUp(WidgetTester tester) async {
     child: const MaterialApp(home: Scaffold(body: ChapterList())),
   ));
   await tester.pumpAndSettle();
-  return container;
+  return (container: container, playback: playback);
 }
 
 void main() {
@@ -44,7 +74,7 @@ void main() {
   });
 
   testWidgets('Add button appends a chapter', (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
     await tester.tap(find.byKey(const ValueKey('chapters.add')));
     await tester.pump();
     expect(container.read(editorProvider).audiobook?.chapters.length, 3);
@@ -52,7 +82,7 @@ void main() {
 
   testWidgets('selected chapter number has a filled background',
       (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
 
     // Initially chapter 0 is selected. Its number container should have a
     // primary-colored background; the unselected one should be transparent.
@@ -78,7 +108,7 @@ void main() {
   });
 
   testWidgets('Delete button removes the selected chapter', (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
     await tester.tap(find.byKey(const ValueKey('chapters.row.1')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('chapters.delete')));
@@ -89,7 +119,7 @@ void main() {
   });
 
   testWidgets('editing a title updates state', (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
     await tester.enterText(
       find.byKey(const ValueKey('chapters.title.0')),
       'Renamed',
@@ -134,7 +164,7 @@ void main() {
   });
 
   testWidgets('shows snackbar and reverts field on duplicate start', (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
 
     // Chapter 0 is at 00:00.000. Try to set chapter 1's start to the same.
     final startField = find.byKey(const ValueKey('chapters.start.1'));
@@ -162,7 +192,7 @@ void main() {
 
   testWidgets('reorders rendered rows when start time moves a chapter',
       (tester) async {
-    final container = await _setUp(tester);
+    final (:container, playback: _) = await _setUp(tester);
 
     // Move chapter 1 ('Beta' @ 10s) to 25s, past chapter 2 (which doesn't
     // exist in this 2-chapter setup — extend to 3).
@@ -206,5 +236,17 @@ void main() {
 
     // Suppress unused container warning.
     expect(container, isNotNull);
+  });
+
+  testWidgets('tap on a chapter row seeks to that chapter\'s start',
+      (tester) async {
+    final (:container, :playback) = await _setUp(tester);
+    // Tap chapter 1 (Beta @ 10s).
+    await tester.tap(find.byKey(const ValueKey('chapters.row.1')));
+    await tester.pump();
+
+    expect(playback.seeks, [const Duration(seconds: 10)]);
+    // Selection moved as well.
+    expect(container.read(selectedChapterProvider), 1);
   });
 }

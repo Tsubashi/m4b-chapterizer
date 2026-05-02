@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 
 import '../../domain/models/chapter.dart';
 import '../providers/editor_state.dart' show SetChapterStartError, editorProvider;
+import '../providers/playback.dart';
 import '../util/duration_format.dart';
 
 final selectedChapterProvider = StateProvider<int>((ref) => 0);
@@ -33,8 +34,10 @@ class ChapterList extends ConsumerWidget {
                 index: i,
                 chapter: chapter,
                 selected: i == selected,
-                onTap: () =>
-                    ref.read(selectedChapterProvider.notifier).state = i,
+                onTap: () {
+                  ref.read(selectedChapterProvider.notifier).state = i;
+                  ref.read(playbackControllerProvider).seek(chapter.start);
+                },
                 onTitleChanged: (v) => notifier.renameChapter(i, v),
                 onStartChanged: (d) => notifier.setChapterStart(i, d),
               );

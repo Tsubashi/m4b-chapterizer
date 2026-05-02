@@ -208,7 +208,9 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             final cur = ref.read(selectedChapterProvider);
             final next = (cur + intent.delta)
                 .clamp(0, book.chapters.length - 1);
+            if (next == cur) return null;
             ref.read(selectedChapterProvider.notifier).state = next;
+            ref.read(playbackControllerProvider).seek(book.chapters[next].start);
             return null;
           }),
           DeleteSelectedChapterIntent:

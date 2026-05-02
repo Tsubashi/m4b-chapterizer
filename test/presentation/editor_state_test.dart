@@ -4,6 +4,7 @@ import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
+import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
 
 class _FakeBookbinder implements Bookbinder {
@@ -26,6 +27,51 @@ class _FakeBookbinder implements Bookbinder {
   }
 }
 
+class _NullPlayback implements PlaybackController {
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> seek(Duration position) async {}
+  @override
+  Duration get position => Duration.zero;
+  @override
+  bool get playing => false;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> dispose() async {}
+}
+
+class _RecordingPlayback implements PlaybackController {
+  final List<Duration> seeks = [];
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> seek(Duration position) async {
+    seeks.add(position);
+  }
+  @override
+  Duration get position => Duration.zero;
+  @override
+  bool get playing => false;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> dispose() async {}
+}
+
 void main() {
   final book = Audiobook.validated(
     title: 'Original',
@@ -36,8 +82,15 @@ void main() {
     totalDuration: const Duration(seconds: 10),
   );
 
-  ProviderContainer makeContainer(_FakeBookbinder fake) => ProviderContainer(
-        overrides: [bookbinderProvider.overrideWithValue(fake)],
+  ProviderContainer makeContainer(
+    _FakeBookbinder fake, {
+    PlaybackController? playback,
+  }) =>
+      ProviderContainer(
+        overrides: [
+          bookbinderProvider.overrideWithValue(fake),
+          playbackControllerProvider.overrideWithValue(playback ?? _NullPlayback()),
+        ],
       );
 
   test('initial state has no audiobook and is not dirty', () {
@@ -247,6 +300,51 @@ void main() {
       expect(error, isNull);
       // Selection stays at 0 because we did not edit the selected chapter.
       expect(container.read(selectedChapterProvider), 0);
+    });
+
+    test('successful setChapterStart seeks to the new start', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback();
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 25));
+
+      expect(error, isNull);
+      expect(playback.seeks, [const Duration(seconds: 25)]);
+    });
+
+    test('rejected setChapterStart does not seek', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback();
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, Duration.zero);
+
+      expect(error, SetChapterStartError.duplicate);
+      expect(playback.seeks, isEmpty);
+    });
+
+    test('beyond-total clamp seeks to the clamped value', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback();
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 9999));
+
+      expect(error, isNull);
+      expect(playback.seeks, [const Duration(milliseconds: 29999)]);
     });
   });
 }

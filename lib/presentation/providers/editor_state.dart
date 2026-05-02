@@ -7,6 +7,7 @@ import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
 import '../../domain/models/cover.dart';
 import '../widgets/chapter_list.dart' show selectedChapterProvider;
+import 'playback.dart';
 
 enum SetChapterStartError { duplicate, firstNotZero }
 
@@ -194,6 +195,10 @@ class EditorNotifier extends Notifier<EditorState> {
         ref.read(selectedChapterProvider.notifier).state = newIndex;
       }
     }
+
+    // 7. Seek the playhead to the new start so the user can hear it.
+    ref.read(playbackControllerProvider).seek(clamped);
+
     return null;
   }
 
