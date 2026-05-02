@@ -162,6 +162,15 @@ class EditorNotifier extends Notifier<EditorState> {
         totalDuration: book.totalDuration,
       );
     });
+    // Select the newly-inserted chapter so the UI scrolls to it.
+    final book2 = state.audiobook;
+    if (book2 != null) {
+      final idx =
+          book2.chapters.indexWhere((c) => c.start == newStart);
+      if (idx >= 0) {
+        ref.read(selectedChapterProvider.notifier).state = idx;
+      }
+    }
   }
 
   void deleteChapter(int index) {
@@ -186,6 +195,16 @@ class EditorNotifier extends Notifier<EditorState> {
         totalDuration: book.totalDuration,
       );
     });
+    final book2 = state.audiobook;
+    if (book2 != null) {
+      final cur = ref.read(selectedChapterProvider);
+      final clamped = cur > book2.chapters.length - 1
+          ? book2.chapters.length - 1
+          : cur;
+      if (clamped != cur) {
+        ref.read(selectedChapterProvider.notifier).state = clamped;
+      }
+    }
   }
 
   SetChapterStartError? setChapterStart(int index, Duration start) {
@@ -227,13 +246,10 @@ class EditorNotifier extends Notifier<EditorState> {
     );
     state = state.copyWith(audiobook: newBook, isDirty: true);
 
-    final currentlySelected = ref.read(selectedChapterProvider);
-    if (currentlySelected == index) {
-      final newIndex =
-          candidate.indexWhere((c) => identical(c, movedChapter));
-      if (newIndex >= 0 && newIndex != index) {
-        ref.read(selectedChapterProvider.notifier).state = newIndex;
-      }
+    final newIndex =
+        candidate.indexWhere((c) => identical(c, movedChapter));
+    if (newIndex >= 0) {
+      ref.read(selectedChapterProvider.notifier).state = newIndex;
     }
 
     ref.read(playbackControllerProvider).seek(clamped);
@@ -298,6 +314,15 @@ class EditorNotifier extends Notifier<EditorState> {
           book == null ? state.redoStack : [...state.redoStack, book],
       isDirty: true,
     );
+    if (book != null) {
+      final diff = newAudiobook.firstDifferingChapterIndex(book);
+      if (diff != null) {
+        final clamped = diff > newAudiobook.chapters.length - 1
+            ? newAudiobook.chapters.length - 1
+            : diff;
+        ref.read(selectedChapterProvider.notifier).state = clamped;
+      }
+    }
   }
 
   void redo() {
@@ -313,6 +338,15 @@ class EditorNotifier extends Notifier<EditorState> {
       redoStack: redoStack.sublist(0, redoStack.length - 1),
       isDirty: true,
     );
+    if (book != null) {
+      final diff = newAudiobook.firstDifferingChapterIndex(book);
+      if (diff != null) {
+        final clamped = diff > newAudiobook.chapters.length - 1
+            ? newAudiobook.chapters.length - 1
+            : diff;
+        ref.read(selectedChapterProvider.notifier).state = clamped;
+      }
+    }
   }
 
   // ===== Internals =====

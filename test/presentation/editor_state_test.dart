@@ -286,24 +286,6 @@ void main() {
           isTrue);
     });
 
-    test('selection follows only the moved chapter, not the original index',
-        () async {
-      final fake = _FakeBookbinder(threeChapterBook());
-      final container = makeContainer(fake);
-      addTearDown(container.dispose);
-      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
-      container.read(selectedChapterProvider.notifier).state = 0;
-
-      // Move chapter 1 (not the selected one) past chapter 2.
-      final error = container
-          .read(editorProvider.notifier)
-          .setChapterStart(1, const Duration(seconds: 25));
-
-      expect(error, isNull);
-      // Selection stays at 0 because we did not edit the selected chapter.
-      expect(container.read(selectedChapterProvider), 0);
-    });
-
     test('successful setChapterStart seeks to the new start', () async {
       final fake = _FakeBookbinder(threeChapterBook());
       final playback = _RecordingPlayback();
@@ -584,6 +566,89 @@ void main() {
       // After sort: 0, 10 (B), 10.001 (new), 20.
       expect(book.chapters[2].start,
           const Duration(seconds: 10, milliseconds: 1));
+    });
+  });
+
+  group('selection follows chapter changes', () {
+    Audiobook threeChapterBook() => Audiobook.validated(
+          chapters: const [
+            Chapter(title: 'A', start: Duration.zero),
+            Chapter(title: 'B', start: Duration(seconds: 10)),
+            Chapter(title: 'C', start: Duration(seconds: 20)),
+          ],
+          totalDuration: const Duration(seconds: 30),
+        );
+
+    test('addChapter selects the newly-inserted chapter', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 7);
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+      // Sorted chapters: 0, 7, 10, 20 — new is at index 1.
+      expect(container.read(selectedChapterProvider), 1);
+    });
+
+    test('deleteChapter clamps selection to the new last row', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 2;
+
+      container.read(editorProvider.notifier).deleteChapter(2);
+      expect(container.read(selectedChapterProvider), 1);
+    });
+
+    test('setChapterStart always selects the moved chapter', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 0;
+
+      container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 25));
+      // Sorted: A@0, C@20, B@25 — moved chapter B is at index 2.
+      expect(container.read(selectedChapterProvider), 2);
+    });
+
+    test('undo of an add selects the formerly-new chapter\'s spot',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 7);
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+      // After add, chapter list = [A, NEW, B, C], selection = 1.
+      container.read(editorProvider.notifier).undo();
+      // After undo, chapter list = [A, B, C]. The first differing index
+      // between [A, NEW, B, C] (post-add) and [A, B, C] (post-undo) is 1.
+      expect(container.read(selectedChapterProvider), 1);
+    });
+
+    test('undo of a metadata-only change does not change selection',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 1;
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.setTitle('Edited');
+      n.endFieldEdit();
+      n.undo();
+
+      expect(container.read(selectedChapterProvider), 1);
     });
   });
 }
