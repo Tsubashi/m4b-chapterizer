@@ -352,6 +352,41 @@ void _registerWidgetTests() {
       expect(h.container.read(selectedChapterProvider), 0);
     });
 
+    testWidgets(
+        'Backspace deletes a character when a TextField is focused',
+        (tester) async {
+      await _pumpEditor(tester);
+      final fieldFinder = find.byKey(const ValueKey('chapters.title.0'));
+      await tester.tap(fieldFinder);
+      await tester.pump();
+
+      final state = tester.state<EditableTextState>(
+        find.descendant(
+            of: fieldFinder, matching: find.byType(EditableText)),
+      );
+      final controller = state.widget.controller;
+      // Place cursor at end of "Alpha".
+      controller.selection =
+          TextSelection.collapsed(offset: controller.text.length);
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pump();
+
+      expect(controller.text, 'Alph',
+          reason: 'Backspace should delete a character in the focused field');
+    });
+
+    // Note: there is no widget test verifying that pressing Space inserts a
+    // space character into a focused TextField. Printable characters in
+    // Flutter desktop apps reach the field via the OS's IME / text-input
+    // channel, not via the hardware key-event path that `sendKeyEvent`
+    // simulates, so the Space-inserts behavior must be verified by smoke
+    // test on the real macOS build. The "Space does NOT toggle play while a
+    // TextField is focused" test above proves our shortcut returns
+    // KeyEventResult.ignored, which is what the OS needs to route the event
+    // to text input.
+
     testWidgets('Cmd+B sets selected chapter start to playhead position',
         (tester) async {
       final h = await _pumpEditor(tester);
