@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
-import '../widgets/chapter_list.dart' show selectedChapterProvider;
+import '../widgets/chapter_list.dart'
+    show selectedChapterProvider, chapterTitleFocusNodesProvider;
 import 'editor_actions.dart';
 
 class PlayPauseIntent extends Intent {
@@ -107,9 +108,46 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'EditorShortcuts');
 
   @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_onFocusChanged);
+  }
+
+  @override
   void dispose() {
+    FocusManager.instance.removeListener(_onFocusChanged);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Re-claim focus when primary focus drifts above our `Shortcuts` widget
+  /// (e.g. after `FocusManager.instance.primaryFocus?.unfocus()`), so that
+  /// keyboard shortcuts continue to route through us.
+  void _onFocusChanged() {
+    if (!mounted) return;
+    final current = FocusManager.instance.primaryFocus;
+    if (current == null) {
+      _focusNode.requestFocus();
+      return;
+    }
+    // If the current focus is a descendant of our node (or is our node),
+    // there's nothing to do.
+    final ancestorContext =
+        current.context?.findAncestorWidgetOfExactType<EditableText>();
+    if (ancestorContext != null) return; // a TextField owns the focus
+    if (current == _focusNode) return;
+    if (_hasAncestor(current, _focusNode)) return;
+    _focusNode.requestFocus();
+  }
+
+  /// Returns true if [node] has [candidate] anywhere on its parent chain.
+  bool _hasAncestor(FocusNode node, FocusNode candidate) {
+    FocusNode? n = node.parent;
+    while (n != null) {
+      if (n == candidate) return true;
+      n = n.parent;
+    }
+    return false;
   }
 
   @override
@@ -185,7 +223,15 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             EditorActions(context, ref).saveAs();
             return null;
           }),
-          // FocusSelectedChapterTitleIntent is wired in the next task.
+          FocusSelectedChapterTitleIntent:
+              CallbackAction<FocusSelectedChapterTitleIntent>(
+            onInvoke: (_) {
+              final idx = ref.read(selectedChapterProvider);
+              final nodes = ref.read(chapterTitleFocusNodesProvider);
+              nodes[idx]?.requestFocus();
+              return null;
+            },
+          ),
         },
         child: Focus(
           focusNode: _focusNode,

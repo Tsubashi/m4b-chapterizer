@@ -13,7 +13,7 @@ import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/screens/editor_screen.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart'
-    show selectedChapterProvider;
+    show selectedChapterProvider, chapterTitleFocusNodesProvider;
 
 void main() {
   group('editorShortcuts keymap', () {
@@ -334,6 +334,26 @@ void _registerWidgetTests() {
         focused?.context?.findAncestorWidgetOfExactType<EditableText>(),
         isNull,
       );
+    });
+
+    testWidgets('Enter focuses the selected chapter title field',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 1;
+      await tester.pump();
+
+      // Ensure no field is currently focused.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump();
+
+      final focused = FocusManager.instance.primaryFocus;
+      expect(focused, isNotNull);
+      // The focus node should be the one belonging to chapter 1's title.
+      final nodes = h.container.read(chapterTitleFocusNodesProvider);
+      expect(focused, nodes[1]);
     });
   });
 }

@@ -8,6 +8,9 @@ import '../util/duration_format.dart';
 
 final selectedChapterProvider = StateProvider<int>((ref) => 0);
 
+final chapterTitleFocusNodesProvider =
+    Provider<Map<int, FocusNode>>((ref) => <int, FocusNode>{});
+
 class ChapterList extends ConsumerWidget {
   const ChapterList({super.key});
 
@@ -61,7 +64,7 @@ class ChapterList extends ConsumerWidget {
   }
 }
 
-class _ChapterRow extends StatefulWidget {
+class _ChapterRow extends ConsumerStatefulWidget {
   const _ChapterRow({
     super.key,
     required this.index,
@@ -80,24 +83,34 @@ class _ChapterRow extends StatefulWidget {
   final SetChapterStartError? Function(Duration) onStartChanged;
 
   @override
-  State<_ChapterRow> createState() => _ChapterRowState();
+  ConsumerState<_ChapterRow> createState() => _ChapterRowState();
 }
 
-class _ChapterRowState extends State<_ChapterRow> {
+class _ChapterRowState extends ConsumerState<_ChapterRow> {
+  late final FocusNode _titleFocusNode;
   late final TextEditingController _titleController;
   late final TextEditingController _startController;
+  // Cached so it remains accessible in dispose() after the widget unmounts.
+  late final Map<int, FocusNode> _focusNodesMap;
 
   @override
   void initState() {
     super.initState();
+    _titleFocusNode = FocusNode();
     _titleController = TextEditingController(text: widget.chapter.title);
     _startController =
         TextEditingController(text: formatDuration(widget.chapter.start));
+    _focusNodesMap = ref.read(chapterTitleFocusNodesProvider);
+    _focusNodesMap[widget.index] = _titleFocusNode;
   }
 
   @override
   void didUpdateWidget(covariant _ChapterRow oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index) {
+      _focusNodesMap.remove(oldWidget.index);
+      _focusNodesMap[widget.index] = _titleFocusNode;
+    }
     if (widget.chapter.title != _titleController.text) {
       _titleController.text = widget.chapter.title;
     }
@@ -109,6 +122,8 @@ class _ChapterRowState extends State<_ChapterRow> {
 
   @override
   void dispose() {
+    _focusNodesMap.remove(widget.index);
+    _titleFocusNode.dispose();
     _titleController.dispose();
     _startController.dispose();
     super.dispose();
@@ -125,6 +140,7 @@ class _ChapterRowState extends State<_ChapterRow> {
           Expanded(
             child: TextField(
               key: ValueKey('chapters.title.${widget.index}'),
+              focusNode: _titleFocusNode,
               controller: _titleController,
               onTap: widget.onTap,
               onChanged: widget.onTitleChanged,
