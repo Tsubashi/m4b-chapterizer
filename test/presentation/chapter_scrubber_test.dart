@@ -8,6 +8,7 @@ Widget _harness({
   List<Duration> chapterStarts = const [],
   ValueChanged<Duration>? onSeek,
   double width = 400,
+  List<double>? peaks,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -19,6 +20,7 @@ Widget _harness({
             totalDuration: totalDuration,
             chapterStarts: chapterStarts,
             onSeek: onSeek ?? (_) {},
+            peaks: peaks,
           ),
         ),
       ),
@@ -223,6 +225,48 @@ void main() {
         isTrue,
         reason: 'expected ~$expected, got $lastSeek',
       );
+    });
+  });
+
+  group('ChapterScrubber waveform rendering', () {
+    testWidgets('renders without exception when peaks are provided',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        peaks: const [0.0, 0.5, 1.0, 0.5, 0.0],
+      ));
+      expect(find.byType(ChapterScrubber), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('snap-to-tick still works when peaks are present',
+        (tester) async {
+      Duration? seeked;
+      const total = Duration(seconds: 100);
+      const chapter2Start = Duration(seconds: 30);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        chapterStarts: const [
+          Duration.zero,
+          chapter2Start,
+          Duration(seconds: 60),
+        ],
+        peaks: const [0.0, 0.5, 1.0, 0.5, 0.0, 0.5, 0.0],
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      final size = tester.getSize(scrubber);
+      const usable = 400 - 24;
+      const padding = 12;
+      const expectedX = padding + (30 / 100) * usable;
+      // Tap 4px right of the chapter-2 tick → within snap radius.
+      await tester.tapAt(
+        topLeft + Offset(expectedX + 4, size.height / 2),
+      );
+      await tester.pump();
+      expect(seeked, chapter2Start);
     });
   });
 }

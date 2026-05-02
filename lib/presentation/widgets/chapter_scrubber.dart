@@ -7,12 +7,14 @@ class ChapterScrubber extends StatefulWidget {
     required this.totalDuration,
     required this.chapterStarts,
     required this.onSeek,
+    this.peaks,
   });
 
   final Duration position;
   final Duration totalDuration;
   final List<Duration> chapterStarts;
   final ValueChanged<Duration> onSeek;
+  final List<double>? peaks;
 
   @override
   State<ChapterScrubber> createState() => _ChapterScrubberState();
@@ -114,10 +116,13 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
               position: _displayedPosition(),
               totalDuration: widget.totalDuration,
               chapterStarts: widget.chapterStarts,
+              peaks: widget.peaks ?? const [],
               trackColor: scheme.surfaceContainerHighest,
               fillColor: scheme.primary,
               tickColor: scheme.outline,
               playheadColor: scheme.primary,
+              waveformPlayedColor: scheme.primary,
+              waveformUnplayedColor: scheme.outlineVariant,
               trackHeight: _trackHeight,
               tickHeight: _tickHeight,
               playheadDiameter: _playheadDiameter,
@@ -136,10 +141,13 @@ class _ScrubberPainter extends CustomPainter {
     required this.position,
     required this.totalDuration,
     required this.chapterStarts,
+    required this.peaks,
     required this.trackColor,
     required this.fillColor,
     required this.tickColor,
     required this.playheadColor,
+    required this.waveformPlayedColor,
+    required this.waveformUnplayedColor,
     required this.trackHeight,
     required this.tickHeight,
     required this.playheadDiameter,
@@ -149,14 +157,19 @@ class _ScrubberPainter extends CustomPainter {
   final Duration position;
   final Duration totalDuration;
   final List<Duration> chapterStarts;
+  final List<double> peaks;
   final Color trackColor;
   final Color fillColor;
   final Color tickColor;
   final Color playheadColor;
+  final Color waveformPlayedColor;
+  final Color waveformUnplayedColor;
   final double trackHeight;
   final double tickHeight;
   final double playheadDiameter;
   final double horizontalPadding;
+
+  static const double _waveformHalfHeight = 10;
 
   double _xFor(Duration d, double width) {
     final usable = width - 2 * horizontalPadding;
@@ -171,25 +184,13 @@ class _ScrubberPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final centerY = size.height / 2;
-    final trackTop = centerY - trackHeight / 2;
-    final trackRect = RRect.fromLTRBR(
-      horizontalPadding,
-      trackTop,
-      size.width - horizontalPadding,
-      trackTop + trackHeight,
-      Radius.circular(trackHeight / 2),
-    );
-    canvas.drawRRect(trackRect, Paint()..color = trackColor);
-
     final playheadX = _xFor(position, size.width);
-    final fillRect = RRect.fromLTRBR(
-      horizontalPadding,
-      trackTop,
-      playheadX,
-      trackTop + trackHeight,
-      Radius.circular(trackHeight / 2),
-    );
-    canvas.drawRRect(fillRect, Paint()..color = fillColor);
+
+    if (peaks.isEmpty) {
+      _paintPlainTrack(canvas, size, centerY, playheadX);
+    } else {
+      _paintWaveform(canvas, size, centerY, playheadX);
+    }
 
     final tickPaint = Paint()
       ..color = tickColor
@@ -210,13 +211,68 @@ class _ScrubberPainter extends CustomPainter {
     );
   }
 
+  void _paintPlainTrack(
+      Canvas canvas, Size size, double centerY, double playheadX) {
+    final trackTop = centerY - trackHeight / 2;
+    final trackRect = RRect.fromLTRBR(
+      horizontalPadding,
+      trackTop,
+      size.width - horizontalPadding,
+      trackTop + trackHeight,
+      Radius.circular(trackHeight / 2),
+    );
+    canvas.drawRRect(trackRect, Paint()..color = trackColor);
+
+    final fillRect = RRect.fromLTRBR(
+      horizontalPadding,
+      trackTop,
+      playheadX,
+      trackTop + trackHeight,
+      Radius.circular(trackHeight / 2),
+    );
+    canvas.drawRRect(fillRect, Paint()..color = fillColor);
+  }
+
+  void _paintWaveform(
+      Canvas canvas, Size size, double centerY, double playheadX) {
+    final usableLeft = horizontalPadding;
+    final usableRight = size.width - horizontalPadding;
+    final usableWidth = usableRight - usableLeft;
+    if (usableWidth <= 0) return;
+
+    final played = Paint()
+      ..color = waveformPlayedColor
+      ..strokeWidth = 1;
+    final unplayed = Paint()
+      ..color = waveformUnplayedColor
+      ..strokeWidth = 1;
+
+    final pixelCount = usableWidth.ceil();
+    for (var px = 0; px < pixelCount; px++) {
+      final x = usableLeft + px.toDouble();
+      final fraction = px / usableWidth;
+      var binIndex = (fraction * peaks.length).floor();
+      if (binIndex >= peaks.length) binIndex = peaks.length - 1;
+      final peak = peaks[binIndex];
+      final h = peak * _waveformHalfHeight;
+      canvas.drawLine(
+        Offset(x, centerY - h),
+        Offset(x, centerY + h),
+        x <= playheadX ? played : unplayed,
+      );
+    }
+  }
+
   @override
   bool shouldRepaint(covariant _ScrubberPainter old) =>
       old.position != position ||
       old.totalDuration != totalDuration ||
       old.chapterStarts != chapterStarts ||
+      old.peaks != peaks ||
       old.trackColor != trackColor ||
       old.fillColor != fillColor ||
       old.tickColor != tickColor ||
-      old.playheadColor != playheadColor;
+      old.playheadColor != playheadColor ||
+      old.waveformPlayedColor != waveformPlayedColor ||
+      old.waveformUnplayedColor != waveformUnplayedColor;
 }
