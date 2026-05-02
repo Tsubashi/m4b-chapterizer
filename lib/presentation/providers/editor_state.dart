@@ -5,6 +5,9 @@ import '../../domain/bookbinder.dart';
 import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
 import '../../domain/models/cover.dart';
+import '../widgets/chapter_list.dart' show selectedChapterProvider;
+
+enum SetChapterStartError { duplicate, firstNotZero }
 
 @immutable
 class EditorState {
@@ -131,23 +134,60 @@ class EditorNotifier extends Notifier<EditorState> {
     });
   }
 
-  void setChapterStart(int index, Duration start) {
-    _updateBook((book) {
-      final updated = [...book.chapters];
-      updated[index] = updated[index].copyWith(start: start);
-      return Audiobook.validated(
-        title: book.title,
-        author: book.author,
-        narrator: book.narrator,
-        album: book.album,
-        genre: book.genre,
-        description: book.description,
-        year: book.year,
-        cover: book.cover,
-        chapters: updated,
-        totalDuration: book.totalDuration,
-      );
-    });
+  SetChapterStartError? setChapterStart(int index, Duration start) {
+    final book = state.audiobook;
+    if (book == null) return null;
+
+    // 1. Clamp into [0, totalDuration - 1ms].
+    final maxAllowed = book.totalDuration - const Duration(milliseconds: 1);
+    Duration clamped = start;
+    if (clamped < Duration.zero) clamped = Duration.zero;
+    if (clamped > maxAllowed) clamped = maxAllowed;
+
+    // 2. Build candidate, capturing the new chapter instance for identity tracking.
+    final movedChapter = book.chapters[index].copyWith(start: clamped);
+    final candidate = [...book.chapters];
+    candidate[index] = movedChapter;
+
+    // 3. Sort by start.
+    candidate.sort((a, b) => a.start.compareTo(b.start));
+
+    // 4. Validate invariants.
+    for (var i = 1; i < candidate.length; i++) {
+      if (candidate[i].start == candidate[i - 1].start) {
+        return SetChapterStartError.duplicate;
+      }
+    }
+    if (candidate.first.start != Duration.zero) {
+      return SetChapterStartError.firstNotZero;
+    }
+
+    // 5. Commit.
+    final newBook = Audiobook.validated(
+      title: book.title,
+      author: book.author,
+      narrator: book.narrator,
+      album: book.album,
+      genre: book.genre,
+      description: book.description,
+      year: book.year,
+      cover: book.cover,
+      chapters: candidate,
+      totalDuration: book.totalDuration,
+    );
+    state = state.copyWith(audiobook: newBook, isDirty: true);
+
+    // 6. Update selection if the moved chapter is the selected one and its
+    //    index changed.
+    final currentlySelected = ref.read(selectedChapterProvider);
+    if (currentlySelected == index) {
+      final newIndex =
+          candidate.indexWhere((c) => identical(c, movedChapter));
+      if (newIndex >= 0 && newIndex != index) {
+        ref.read(selectedChapterProvider.notifier).state = newIndex;
+      }
+    }
+    return null;
   }
 
   void clearCover() {

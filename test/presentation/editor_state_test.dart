@@ -4,6 +4,7 @@ import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
+import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
 
 class _FakeBookbinder implements Bookbinder {
   _FakeBookbinder(this._book);
@@ -129,5 +130,123 @@ void main() {
         .setChapterStart(1, const Duration(seconds: 7));
     final state = container.read(editorProvider);
     expect(state.audiobook?.chapters[1].start, const Duration(seconds: 7));
+  });
+
+  group('setChapterStart reorder & clamp', () {
+    Audiobook threeChapterBook() => Audiobook.validated(
+          chapters: const [
+            Chapter(title: 'First', start: Duration.zero),
+            Chapter(title: 'Second', start: Duration(seconds: 10)),
+            Chapter(title: 'Third', start: Duration(seconds: 20)),
+          ],
+          totalDuration: const Duration(seconds: 30),
+        );
+
+    test('reorders the list when a new start breaks order; selection follows',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 1;
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 25));
+
+      expect(error, isNull);
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.chapters.map((c) => c.title).toList(),
+          ['First', 'Third', 'Second']);
+      expect(book.chapters[2].start, const Duration(seconds: 25));
+      expect(container.read(selectedChapterProvider), 2);
+    });
+
+    test('clamps a negative start to zero (which then triggers duplicate)',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      final stateBefore = container.read(editorProvider).audiobook;
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: -5));
+
+      expect(error, SetChapterStartError.duplicate);
+      expect(identical(stateBefore, container.read(editorProvider).audiobook),
+          isTrue);
+    });
+
+    test('clamps a beyond-total start to totalDuration - 1ms', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 9999));
+
+      expect(error, isNull);
+      final book = container.read(editorProvider).audiobook!;
+      // Chapter "Second" is now at the end, clamped to 30s - 1ms.
+      final movedChapter =
+          book.chapters.firstWhere((c) => c.title == 'Second');
+      expect(movedChapter.start, const Duration(milliseconds: 29999));
+    });
+
+    test('rejects with duplicate error and leaves state unchanged',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      final stateBefore = container.read(editorProvider).audiobook;
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, Duration.zero);
+
+      expect(error, SetChapterStartError.duplicate);
+      expect(identical(stateBefore, container.read(editorProvider).audiobook),
+          isTrue);
+    });
+
+    test('rejects with firstNotZero error when chapter 0 is moved off zero',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      final stateBefore = container.read(editorProvider).audiobook;
+
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(0, const Duration(seconds: 5));
+
+      expect(error, SetChapterStartError.firstNotZero);
+      expect(identical(stateBefore, container.read(editorProvider).audiobook),
+          isTrue);
+    });
+
+    test('selection follows only the moved chapter, not the original index',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      container.read(selectedChapterProvider.notifier).state = 0;
+
+      // Move chapter 1 (not the selected one) past chapter 2.
+      final error = container
+          .read(editorProvider.notifier)
+          .setChapterStart(1, const Duration(seconds: 25));
+
+      expect(error, isNull);
+      // Selection stays at 0 because we did not edit the selected chapter.
+      expect(container.read(selectedChapterProvider), 0);
+    });
   });
 }
