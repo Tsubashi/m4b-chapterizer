@@ -33,27 +33,48 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
     return widget.position;
   }
 
+  Duration _positionForX(double x, double width) {
+    final usable = width - 2 * _horizontalPadding;
+    if (usable <= 0 || widget.totalDuration <= Duration.zero) {
+      return Duration.zero;
+    }
+    final fraction = ((x - _horizontalPadding) / usable).clamp(0.0, 1.0);
+    final micros = (widget.totalDuration.inMicroseconds * fraction).round();
+    return Duration(microseconds: micros);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return SizedBox(
       height: _hitAreaHeight,
-      child: CustomPaint(
-        painter: _ScrubberPainter(
-          position: _displayedPosition(),
-          totalDuration: widget.totalDuration,
-          chapterStarts: widget.chapterStarts,
-          trackColor: scheme.surfaceContainerHighest,
-          fillColor: scheme.primary,
-          tickColor: scheme.outline,
-          playheadColor: scheme.primary,
-          trackHeight: _trackHeight,
-          tickHeight: _tickHeight,
-          playheadDiameter: _playheadDiameter,
-          horizontalPadding: _horizontalPadding,
-        ),
-        size: Size.infinite,
-      ),
+      child: LayoutBuilder(builder: (context, constraints) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            widget.onSeek(_positionForX(
+              details.localPosition.dx,
+              constraints.maxWidth,
+            ));
+          },
+          child: CustomPaint(
+            painter: _ScrubberPainter(
+              position: _displayedPosition(),
+              totalDuration: widget.totalDuration,
+              chapterStarts: widget.chapterStarts,
+              trackColor: scheme.surfaceContainerHighest,
+              fillColor: scheme.primary,
+              tickColor: scheme.outline,
+              playheadColor: scheme.primary,
+              trackHeight: _trackHeight,
+              tickHeight: _tickHeight,
+              playheadDiameter: _playheadDiameter,
+              horizontalPadding: _horizontalPadding,
+            ),
+            size: Size.infinite,
+          ),
+        );
+      }),
     );
   }
 }

@@ -61,4 +61,65 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('ChapterScrubber tap-to-seek', () {
+    testWidgets('tap at 25% of width seeks to ~25% of duration',
+        (tester) async {
+      Duration? seeked;
+      const total = Duration(seconds: 100);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      final size = tester.getSize(scrubber);
+      // Tap at the 25% horizontal position within the scrubber.
+      final tapAt = topLeft + Offset(size.width * 0.25, size.height / 2);
+      await tester.tapAt(tapAt);
+      await tester.pump();
+
+      expect(seeked, isNotNull);
+      // 25% of width minus 12px padding on each side. Allow ±2 seconds tolerance.
+      final expected = total * (((400 * 0.25) - 12) / (400 - 24));
+      expect(
+        (seeked! - expected).abs() <= const Duration(seconds: 2),
+        isTrue,
+        reason: 'expected ~$expected, got $seeked',
+      );
+    });
+
+    testWidgets('tap at the very left clamps to 0',
+        (tester) async {
+      Duration? seeked;
+      await tester.pumpWidget(_harness(
+        totalDuration: const Duration(seconds: 100),
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      await tester.tapAt(topLeft + const Offset(0, 12));
+      await tester.pump();
+      expect(seeked, Duration.zero);
+    });
+
+    testWidgets('tap at the very right clamps to totalDuration',
+        (tester) async {
+      Duration? seeked;
+      const total = Duration(seconds: 100);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+      final scrubber = find.byType(ChapterScrubber);
+      final topRight = tester.getTopRight(scrubber);
+      await tester.tapAt(topRight + const Offset(-1, 12));
+      await tester.pump();
+      expect(seeked, total);
+    });
+  });
 }
