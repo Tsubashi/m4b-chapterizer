@@ -122,4 +122,63 @@ void main() {
       expect(seeked, total);
     });
   });
+
+  group('ChapterScrubber snap-to-tick', () {
+    testWidgets('tap within 6px of a chapter tick snaps to that start',
+        (tester) async {
+      Duration? seeked;
+      const total = Duration(seconds: 100);
+      const chapter2Start = Duration(seconds: 30);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        chapterStarts: const [
+          Duration.zero,
+          chapter2Start,
+          Duration(seconds: 60),
+        ],
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      final size = tester.getSize(scrubber);
+      // Compute pixel x of chapter2: 12 + (30/100) * (400 - 24) = 12 + 112.8 = 124.8
+      const usable = 400 - 24;
+      const padding = 12;
+      const expectedX = padding + (30 / 100) * usable;
+      // Tap 4px to the right of the tick → within snap radius.
+      final tapAt =
+          topLeft + Offset(expectedX + 4, size.height / 2);
+      await tester.tapAt(tapAt);
+      await tester.pump();
+      expect(seeked, chapter2Start);
+    });
+
+    testWidgets('tap further than 6px from a tick does not snap',
+        (tester) async {
+      Duration? seeked;
+      const total = Duration(seconds: 100);
+      await tester.pumpWidget(_harness(
+        totalDuration: total,
+        chapterStarts: const [
+          Duration.zero,
+          Duration(seconds: 30),
+        ],
+        onSeek: (d) => seeked = d,
+        width: 400,
+      ));
+      final scrubber = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubber);
+      const usable = 400 - 24;
+      const padding = 12;
+      const expectedX = padding + (30 / 100) * usable;
+      // Tap 10px right of the tick → outside snap radius.
+      await tester.tapAt(
+        topLeft + const Offset(expectedX + 10, 12),
+      );
+      await tester.pump();
+      expect(seeked, isNot(const Duration(seconds: 30)));
+    });
+  });
 }

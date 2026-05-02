@@ -24,6 +24,7 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
   static const double _tickHeight = 12;
   static const double _playheadDiameter = 12;
   static const double _horizontalPadding = 12;
+  static const double _snapPx = 6;
 
   Duration _displayedPosition() {
     final total = widget.totalDuration;
@@ -43,6 +44,30 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
     return Duration(microseconds: micros);
   }
 
+  Duration _maybeSnap(double tapX, double width) {
+    if (widget.chapterStarts.isEmpty) {
+      return _positionForX(tapX, width);
+    }
+    final usable = width - 2 * _horizontalPadding;
+    if (usable <= 0 || widget.totalDuration <= Duration.zero) {
+      return Duration.zero;
+    }
+    Duration? closest;
+    double closestDx = double.infinity;
+    for (final start in widget.chapterStarts) {
+      final fraction =
+          start.inMicroseconds / widget.totalDuration.inMicroseconds;
+      final tickX = _horizontalPadding + fraction * usable;
+      final dx = (tickX - tapX).abs();
+      if (dx < closestDx) {
+        closestDx = dx;
+        closest = start;
+      }
+    }
+    if (closest != null && closestDx <= _snapPx) return closest;
+    return _positionForX(tapX, width);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -52,7 +77,7 @@ class _ChapterScrubberState extends State<ChapterScrubber> {
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) {
-            widget.onSeek(_positionForX(
+            widget.onSeek(_maybeSnap(
               details.localPosition.dx,
               constraints.maxWidth,
             ));
