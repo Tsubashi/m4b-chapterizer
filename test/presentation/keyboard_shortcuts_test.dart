@@ -84,6 +84,8 @@ void main() {
         OpenFileIntent,
         SetChapterToPlayheadIntent,
         DefocusIntent,
+        UndoIntent,
+        RedoIntent,
       ]));
     });
   });
@@ -466,6 +468,97 @@ void _registerWidgetTests() {
       // The focus node should be the one belonging to chapter 1's title.
       final nodes = h.container.read(chapterTitleFocusNodesProvider);
       expect(focused, nodes[1]);
+    });
+
+    testWidgets('Cmd+Z undoes when no field is focused', (tester) async {
+      final h = await _pumpEditor(tester);
+      final beforeCount =
+          h.container.read(editorProvider).audiobook!.chapters.length;
+
+      // Programmatically add a chapter; this records an undo step.
+      h.container.read(editorProvider.notifier).addChapter();
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.length,
+        beforeCount + 1,
+      );
+
+      await _sendCmdKey(tester, LogicalKeyboardKey.keyZ);
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.length,
+        beforeCount,
+      );
+    });
+
+    testWidgets(
+        'Cmd+Z while a TextField is focused cancels the in-flight edit',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      final originalTitle =
+          h.container.read(editorProvider).audiobook!.chapters.first.title;
+
+      // Focus the chapter 0 title field; type into it.
+      await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('chapters.title.0')),
+        'Modified',
+      );
+      await tester.pump();
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.first.title,
+        'Modified',
+      );
+
+      await _sendCmdKey(tester, LogicalKeyboardKey.keyZ);
+      await tester.pumpAndSettle();
+
+      // Title reverted; primary focus no longer in EditableText; no undo step.
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.first.title,
+        originalTitle,
+      );
+      expect(
+        FocusManager.instance.primaryFocus
+            ?.context?.findAncestorWidgetOfExactType<EditableText>(),
+        isNull,
+      );
+      expect(h.container.read(editorProvider).canUndo, isFalse);
+    });
+
+    testWidgets('Cmd+Shift+Z redoes when no field is focused',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      final beforeCount =
+          h.container.read(editorProvider).audiobook!.chapters.length;
+      h.container.read(editorProvider.notifier).addChapter();
+      h.container.read(editorProvider.notifier).undo();
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.length,
+        beforeCount,
+      );
+
+      await _sendCmdKey(tester, LogicalKeyboardKey.keyZ, shift: true);
+      expect(
+        h.container.read(editorProvider).audiobook!.chapters.length,
+        beforeCount + 1,
+      );
+    });
+
+    testWidgets('Cmd+Shift+Z while a TextField is focused is a no-op',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      // Build a redo step, then focus a field and try Cmd+Shift+Z.
+      h.container.read(editorProvider.notifier).addChapter();
+      h.container.read(editorProvider.notifier).undo();
+
+      await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+      await tester.pump();
+
+      final beforeRedoCanRedo =
+          h.container.read(editorProvider).canRedo;
+      await _sendCmdKey(tester, LogicalKeyboardKey.keyZ, shift: true);
+      // Redo did NOT fire — canRedo unchanged.
+      expect(h.container.read(editorProvider).canRedo, beforeRedoCanRedo);
     });
   });
 }

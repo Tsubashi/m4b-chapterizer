@@ -56,6 +56,14 @@ class DefocusIntent extends Intent {
   const DefocusIntent();
 }
 
+class UndoIntent extends Intent {
+  const UndoIntent();
+}
+
+class RedoIntent extends Intent {
+  const RedoIntent();
+}
+
 /// Returns the editor's full keyboard shortcut map, with platform-correct
 /// modifiers (`⌘` on macOS, `Ctrl` elsewhere).
 Map<ShortcutActivator, Intent> editorShortcuts() {
@@ -92,6 +100,8 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
     cmd(LogicalKeyboardKey.keyS, shift: true): const SaveAsIntent(),
     cmd(LogicalKeyboardKey.keyO): const OpenFileIntent(),
     cmd(LogicalKeyboardKey.keyB): const SetChapterToPlayheadIntent(),
+    cmd(LogicalKeyboardKey.keyZ): const UndoIntent(),
+    cmd(LogicalKeyboardKey.keyZ, shift: true): const RedoIntent(),
   };
 }
 
@@ -258,6 +268,21 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             final idx = ref.read(selectedChapterProvider);
             final nodes = ref.read(chapterTitleFocusNodesProvider);
             nodes[idx]?.requestFocus();
+            return null;
+          }),
+          UndoIntent: CallbackAction<UndoIntent>(onInvoke: (_) {
+            final notifier = ref.read(editorProvider.notifier);
+            if (_isEditableTextFocused()) {
+              notifier.cancelFieldEdit();
+              FocusManager.instance.primaryFocus?.unfocus();
+            } else {
+              notifier.undo();
+            }
+            return null;
+          }),
+          RedoIntent: CallbackAction<RedoIntent>(onInvoke: (_) {
+            if (_isEditableTextFocused()) return null;
+            ref.read(editorProvider.notifier).redo();
             return null;
           }),
         },
