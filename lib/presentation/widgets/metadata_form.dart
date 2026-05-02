@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/audiobook.dart';
 import '../providers/editor_state.dart';
 
 class MetadataForm extends ConsumerStatefulWidget {
@@ -27,8 +28,6 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
   late final _yearFocus = FocusNode()..addListener(_onFocusChanged);
   late final _descriptionFocus = FocusNode()..addListener(_onFocusChanged);
 
-  String? _hydratedForPath;
-
   void _onFocusChanged() {
     final anyFocused = [
       _titleFocus,
@@ -47,16 +46,24 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
     }
   }
 
-  void _hydrateFromState(EditorState state) {
-    final book = state.audiobook;
-    if (book == null) return;
-    _title.text = book.title ?? '';
-    _author.text = book.author ?? '';
-    _narrator.text = book.narrator ?? '';
-    _album.text = book.album ?? '';
-    _genre.text = book.genre ?? '';
-    _year.text = book.year?.toString() ?? '';
-    _description.text = book.description ?? '';
+  /// Updates each controller in place if it disagrees with the audiobook's
+  /// value. Loop-safe: when the user types, `onChanged` fires `setX` which
+  /// updates the audiobook, so by the time we re-enter `build`, the controller
+  /// and audiobook agree and we no-op. After undo/redo (or opening a new
+  /// file), the audiobook changes without a corresponding controller write,
+  /// so the comparison fires and we update.
+  void _syncControllersFromAudiobook(Audiobook book) {
+    void sync(TextEditingController c, String value) {
+      if (c.text != value) c.text = value;
+    }
+
+    sync(_title, book.title ?? '');
+    sync(_author, book.author ?? '');
+    sync(_narrator, book.narrator ?? '');
+    sync(_album, book.album ?? '');
+    sync(_genre, book.genre ?? '');
+    sync(_description, book.description ?? '');
+    sync(_year, book.year?.toString() ?? '');
   }
 
   @override
@@ -81,10 +88,8 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(editorProvider);
-    if (state.audiobook != null && state.path != _hydratedForPath) {
-      _hydrateFromState(state);
-      _hydratedForPath = state.path;
-    }
+    final book = state.audiobook;
+    if (book != null) _syncControllersFromAudiobook(book);
     final notifier = ref.read(editorProvider.notifier);
     return Padding(
       padding: const EdgeInsets.all(8),

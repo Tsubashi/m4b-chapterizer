@@ -139,4 +139,42 @@ void main() {
     container.read(editorProvider.notifier).undo();
     expect(container.read(editorProvider).audiobook!.title, 'Old');
   });
+
+  testWidgets('undo after a metadata edit also reverts the visible field text',
+      (tester) async {
+    final fake = _StubBookbinder(Audiobook.validated(
+      title: 'Old',
+      chapters: const [Chapter(title: 'C', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 5),
+    ));
+    final container = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: MetadataForm())),
+    ));
+    await tester.pumpAndSettle();
+
+    // Edit + commit by defocusing.
+    final titleKey = const ValueKey('metadata.title');
+    await tester.tap(find.byKey(titleKey));
+    await tester.pump();
+    await tester.enterText(find.byKey(titleKey), 'New');
+    await tester.pump();
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    // Undo.
+    container.read(editorProvider.notifier).undo();
+    await tester.pumpAndSettle();
+
+    expect(container.read(editorProvider).audiobook!.title, 'Old');
+    final controller =
+        tester.widget<TextField>(find.byKey(titleKey)).controller!;
+    expect(controller.text, 'Old',
+        reason: 'controller text must follow the audiobook value after undo');
+  });
 }
