@@ -95,6 +95,15 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
   };
 }
 
+/// True when an [EditableText] is currently the primary focus. Bare-key
+/// shortcuts (Space, arrows, Backspace, Enter) defer to the focused field;
+/// modifier shortcuts (Cmd/Ctrl-prefixed) and Esc do not.
+bool _isEditableTextFocused() {
+  final focused = FocusManager.instance.primaryFocus;
+  return focused?.context?.findAncestorWidgetOfExactType<EditableText>() !=
+      null;
+}
+
 class EditorShortcuts extends ConsumerStatefulWidget {
   const EditorShortcuts({super.key, required this.child});
 
@@ -158,11 +167,13 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
       child: Actions(
         actions: <Type, Action<Intent>>{
           PlayPauseIntent: CallbackAction<PlayPauseIntent>(onInvoke: (_) {
+            if (_isEditableTextFocused()) return null;
             final c = ref.read(playbackControllerProvider);
             c.playing ? c.pause() : c.play();
             return null;
           }),
           ScrubIntent: CallbackAction<ScrubIntent>(onInvoke: (intent) {
+            if (_isEditableTextFocused()) return null;
             final c = ref.read(playbackControllerProvider);
             final book = ref.read(editorProvider).audiobook;
             if (book == null) return null;
@@ -175,6 +186,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
           }),
           MoveChapterSelectionIntent:
               CallbackAction<MoveChapterSelectionIntent>(onInvoke: (intent) {
+            if (_isEditableTextFocused()) return null;
             final book = ref.read(editorProvider).audiobook;
             if (book == null) return null;
             final cur = ref.read(selectedChapterProvider);
@@ -185,6 +197,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
           }),
           DeleteSelectedChapterIntent:
               CallbackAction<DeleteSelectedChapterIntent>(onInvoke: (_) {
+            if (_isEditableTextFocused()) return null;
             final book = ref.read(editorProvider).audiobook;
             if (book == null) return null;
             final idx = ref.read(selectedChapterProvider);
@@ -226,6 +239,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
           FocusSelectedChapterTitleIntent:
               CallbackAction<FocusSelectedChapterTitleIntent>(
             onInvoke: (_) {
+              if (_isEditableTextFocused()) return null;
               final idx = ref.read(selectedChapterProvider);
               final nodes = ref.read(chapterTitleFocusNodesProvider);
               nodes[idx]?.requestFocus();

@@ -302,6 +302,56 @@ void _registerWidgetTests() {
       expect(titles, ['Alpha', 'Gamma']);
     });
 
+    testWidgets(
+        'Backspace does NOT delete a chapter while a TextField is focused',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 1;
+      final beforeCount =
+          h.container.read(editorProvider).audiobook!.chapters.length;
+
+      // Focus the title field of chapter 1 — real focus, not test text input.
+      await tester.tap(find.byKey(const ValueKey('chapters.title.1')));
+      await tester.pump();
+      expect(
+        FocusManager.instance.primaryFocus
+            ?.context?.findAncestorWidgetOfExactType<EditableText>(),
+        isNotNull,
+        reason: 'precondition: an EditableText must be focused',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.pump();
+
+      final afterCount =
+          h.container.read(editorProvider).audiobook!.chapters.length;
+      expect(afterCount, beforeCount,
+          reason: 'Backspace should be consumed by the focused field');
+    });
+
+    testWidgets(
+        'Space does NOT toggle play while a TextField is focused',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pump();
+      expect(h.playback.playing, isFalse);
+    });
+
+    testWidgets(
+        'ArrowDown does NOT change selection while a TextField is focused',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 0;
+      await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(h.container.read(selectedChapterProvider), 0);
+    });
+
     testWidgets('Cmd+B sets selected chapter start to playhead position',
         (tester) async {
       final h = await _pumpEditor(tester);
