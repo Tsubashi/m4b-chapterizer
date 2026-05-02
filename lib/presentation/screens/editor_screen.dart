@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../keyboard/shortcuts.dart';
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../util/file_picker_errors.dart';
@@ -51,7 +52,8 @@ class EditorScreen extends ConsumerWidget {
       }
     });
 
-    return Scaffold(
+    return EditorShortcuts(
+      child: Scaffold(
       appBar: AppBar(
         title: Row(
           children: [
@@ -129,6 +131,7 @@ class EditorScreen extends ConsumerWidget {
                 PlaybackControls(),
               ],
             ),
+    ),
     );
   }
 }

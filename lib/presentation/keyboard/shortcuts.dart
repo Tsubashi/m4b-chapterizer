@@ -2,6 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../providers/editor_state.dart';
+import '../providers/playback.dart';
+import '../widgets/chapter_list.dart' show selectedChapterProvider;
 
 class PlayPauseIntent extends Intent {
   const PlayPauseIntent();
@@ -86,4 +91,100 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
     cmd(LogicalKeyboardKey.keyO): const OpenFileIntent(),
     cmd(LogicalKeyboardKey.keyB): const SetChapterToPlayheadIntent(),
   };
+}
+
+class EditorShortcuts extends ConsumerStatefulWidget {
+  const EditorShortcuts({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  ConsumerState<EditorShortcuts> createState() => _EditorShortcutsState();
+}
+
+class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
+  final FocusNode _focusNode = FocusNode(debugLabel: 'EditorShortcuts');
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ref = this.ref;
+    return Shortcuts(
+      shortcuts: editorShortcuts(),
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          PlayPauseIntent: CallbackAction<PlayPauseIntent>(onInvoke: (_) {
+            final c = ref.read(playbackControllerProvider);
+            c.playing ? c.pause() : c.play();
+            return null;
+          }),
+          ScrubIntent: CallbackAction<ScrubIntent>(onInvoke: (intent) {
+            final c = ref.read(playbackControllerProvider);
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null) return null;
+            final raw = c.position + intent.delta;
+            final clamped = raw < Duration.zero
+                ? Duration.zero
+                : (raw > book.totalDuration ? book.totalDuration : raw);
+            c.seek(clamped);
+            return null;
+          }),
+          MoveChapterSelectionIntent:
+              CallbackAction<MoveChapterSelectionIntent>(onInvoke: (intent) {
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null) return null;
+            final cur = ref.read(selectedChapterProvider);
+            final next = (cur + intent.delta)
+                .clamp(0, book.chapters.length - 1);
+            ref.read(selectedChapterProvider.notifier).state = next;
+            return null;
+          }),
+          DeleteSelectedChapterIntent:
+              CallbackAction<DeleteSelectedChapterIntent>(onInvoke: (_) {
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null) return null;
+            final idx = ref.read(selectedChapterProvider);
+            ref.read(editorProvider.notifier).deleteChapter(idx);
+            return null;
+          }),
+          AddChapterIntent: CallbackAction<AddChapterIntent>(onInvoke: (_) {
+            ref.read(editorProvider.notifier).addChapter();
+            return null;
+          }),
+          SaveIntent: CallbackAction<SaveIntent>(onInvoke: (_) {
+            ref.read(editorProvider.notifier).save();
+            return null;
+          }),
+          SetChapterToPlayheadIntent:
+              CallbackAction<SetChapterToPlayheadIntent>(onInvoke: (_) {
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null) return null;
+            final idx = ref.read(selectedChapterProvider);
+            final pos = ref.read(playbackControllerProvider).position;
+            ref.read(editorProvider.notifier).setChapterStart(idx, pos);
+            return null;
+          }),
+          DefocusIntent: CallbackAction<DefocusIntent>(onInvoke: (_) {
+            FocusManager.instance.primaryFocus?.unfocus();
+            // Re-claim focus on this widget so subsequent shortcuts still
+            // route through `Shortcuts`.
+            _focusNode.requestFocus();
+            return null;
+          }),
+          // SaveAsIntent, OpenFileIntent, FocusSelectedChapterTitleIntent
+          // are wired in subsequent tasks.
+        },
+        child: Focus(
+          focusNode: _focusNode,
+          autofocus: true,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
 }
