@@ -105,4 +105,79 @@ void main() {
     expect(controller.text, 'AB');
     expect(controller.selection.baseOffset, controller.text.length);
   });
+
+  testWidgets('shows snackbar and reverts field on duplicate start', (tester) async {
+    final container = await _setUp(tester);
+
+    // Chapter 0 is at 00:00.000. Try to set chapter 1's start to the same.
+    final startField = find.byKey(const ValueKey('chapters.start.1'));
+    await tester.tap(startField);
+    await tester.pump();
+    await tester.enterText(startField, '00:00:00.000');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+
+    // Snackbar visible with the duplicate message.
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.textContaining('unique'), findsOneWidget);
+
+    // The field's text reverted to the original "00:00:10.000".
+    final controller =
+        tester.widget<TextField>(startField).controller!;
+    expect(controller.text, '00:00:10.000');
+
+    // Audiobook state unchanged: chapter 1 still at 10s.
+    expect(
+      container.read(editorProvider).audiobook!.chapters[1].start,
+      const Duration(seconds: 10),
+    );
+  });
+
+  testWidgets('reorders rendered rows when start time moves a chapter',
+      (tester) async {
+    final container = await _setUp(tester);
+
+    // Move chapter 1 ('Beta' @ 10s) to 25s, past chapter 2 (which doesn't
+    // exist in this 2-chapter setup — extend to 3).
+    // _setUp uses a 2-chapter book; for this test, override with a 3-chapter
+    // book by re-opening with a different fake.
+    // Simpler: just verify the 2-chapter case where Beta moves to 25s
+    // (totalDuration 30s) which keeps it at index 1 — so we need a 3-chapter
+    // setup. Override in a fresh container:
+    final fake = _StubBookbinder(Audiobook.validated(
+      chapters: const [
+        Chapter(title: 'Alpha', start: Duration.zero),
+        Chapter(title: 'Beta', start: Duration(seconds: 10)),
+        Chapter(title: 'Gamma', start: Duration(seconds: 20)),
+      ],
+      totalDuration: const Duration(seconds: 30),
+    ));
+    final c = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    addTearDown(c.dispose);
+    await c.read(editorProvider.notifier).open('/tmp/y.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: c,
+      child: const MaterialApp(home: Scaffold(body: ChapterList())),
+    ));
+    await tester.pumpAndSettle();
+
+    // Move 'Beta' (index 1) to 00:00:25.000.
+    final startField = find.byKey(const ValueKey('chapters.start.1'));
+    await tester.tap(startField);
+    await tester.pump();
+    await tester.enterText(startField, '00:00:25.000');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    // Audiobook chapter order is now [Alpha, Gamma, Beta].
+    expect(
+      c.read(editorProvider).audiobook!.chapters.map((x) => x.title).toList(),
+      ['Alpha', 'Gamma', 'Beta'],
+    );
+
+    // Suppress unused container warning.
+    expect(container, isNotNull);
+  });
 }

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../../domain/models/chapter.dart';
-import '../providers/editor_state.dart';
+import '../providers/editor_state.dart' show SetChapterStartError, editorProvider;
 import '../util/duration_format.dart';
 
 final selectedChapterProvider = StateProvider<int>((ref) => 0);
@@ -77,7 +77,7 @@ class _ChapterRow extends StatefulWidget {
   final bool selected;
   final VoidCallback onTap;
   final ValueChanged<String> onTitleChanged;
-  final ValueChanged<Duration> onStartChanged;
+  final SetChapterStartError? Function(Duration) onStartChanged;
 
   @override
   State<_ChapterRow> createState() => _ChapterRowState();
@@ -140,10 +140,25 @@ class _ChapterRowState extends State<_ChapterRow> {
                 controller: _startController,
                 onTap: widget.onTap,
                 onSubmitted: (v) {
+                  Duration parsed;
                   try {
-                    widget.onStartChanged(parseDuration(v));
+                    parsed = parseDuration(v);
                   } on FormatException {
-                    // leave field as-is
+                    _startController.text = formatDuration(widget.chapter.start);
+                    return;
+                  }
+                  final error = widget.onStartChanged(parsed);
+                  if (error != null) {
+                    _startController.text = formatDuration(widget.chapter.start);
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger.showSnackBar(SnackBar(
+                      content: Text(switch (error) {
+                        SetChapterStartError.duplicate =>
+                            'Chapter start times must be unique',
+                        SetChapterStartError.firstNotZero =>
+                            'First chapter must start at 00:00:00.000',
+                      }),
+                    ));
                   }
                 },
               ),
