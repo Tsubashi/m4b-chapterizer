@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../widgets/chapter_list.dart' show selectedChapterProvider;
+import 'editor_actions.dart';
 
 class PlayPauseIntent extends Intent {
   const PlayPauseIntent();
@@ -176,8 +177,15 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             _focusNode.requestFocus();
             return null;
           }),
-          // SaveAsIntent, OpenFileIntent, FocusSelectedChapterTitleIntent
-          // are wired in subsequent tasks.
+          OpenFileIntent: CallbackAction<OpenFileIntent>(onInvoke: (_) {
+            EditorActions(context, ref).open();
+            return null;
+          }),
+          SaveAsIntent: CallbackAction<SaveAsIntent>(onInvoke: (_) {
+            EditorActions(context, ref).saveAs();
+            return null;
+          }),
+          // FocusSelectedChapterTitleIntent is wired in the next task.
         },
         child: Focus(
           focusNode: _focusNode,

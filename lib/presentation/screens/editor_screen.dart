@@ -1,13 +1,12 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../keyboard/editor_actions.dart';
 import '../keyboard/shortcuts.dart';
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
-import '../util/file_picker_errors.dart';
 import '../widgets/chapter_list.dart';
 import '../widgets/cover_panel.dart';
 import '../widgets/metadata_form.dart';
@@ -16,32 +15,9 @@ import '../widgets/playback_controls.dart';
 class EditorScreen extends ConsumerWidget {
   const EditorScreen({super.key});
 
-  Future<bool> _confirmDiscard(BuildContext context) async {
-    final answer = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Discard unsaved changes?'),
-        content: const Text(
-            'You have unsaved changes. Continue and lose them?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Discard'),
-          ),
-        ],
-      ),
-    );
-    return answer ?? false;
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(editorProvider);
-    final notifier = ref.read(editorProvider.notifier);
     final playback = ref.read(playbackControllerProvider);
     final filename = state.path?.split(Platform.pathSeparator).last ?? '';
 
@@ -64,42 +40,19 @@ class EditorScreen extends ConsumerWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              if (state.isDirty && !await _confirmDiscard(context)) return;
-              if (!context.mounted) return;
-              final result = await guardFilePicker(
-                context,
-                () => FilePicker.pickFiles(
-                  type: FileType.custom,
-                  allowedExtensions: const ['m4b'],
-                ),
-              );
-              final path = result?.files.single.path;
-              if (path == null) return;
-              await notifier.open(path);
-            },
+            onPressed: () => EditorActions(context, ref).open(),
             child: const Text('Open…'),
           ),
           TextButton(
-            onPressed:
-                state.audiobook == null ? null : () => notifier.save(),
+            onPressed: state.audiobook == null
+                ? null
+                : () => EditorActions(context, ref).save(),
             child: const Text('Save'),
           ),
           TextButton(
             onPressed: state.audiobook == null
                 ? null
-                : () async {
-                    final result = await guardFilePicker(
-                      context,
-                      () => FilePicker.saveFile(
-                        type: FileType.custom,
-                        allowedExtensions: const ['m4b'],
-                        fileName: filename,
-                      ),
-                    );
-                    if (result == null) return;
-                    await notifier.saveAs(result);
-                  },
+                : () => EditorActions(context, ref).saveAs(),
             child: const Text('Save As…'),
           ),
         ],
