@@ -83,4 +83,67 @@ void main() {
       expect(updated.totalDuration, totalDuration);
     });
   });
+
+  group('AudiobookDiff.firstDifferingChapterIndex', () {
+    Audiobook book(List<Chapter> chapters) => Audiobook.validated(
+          chapters: chapters,
+          totalDuration: const Duration(seconds: 100),
+        );
+
+    test('returns null when chapters are equal', () {
+      final a = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+      ]);
+      final b = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+      ]);
+      expect(a.firstDifferingChapterIndex(b), isNull);
+    });
+
+    test('returns the index of the first differing chapter', () {
+      final a = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+      ]);
+      final b = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'BB', start: Duration(seconds: 5)),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+      ]);
+      expect(a.firstDifferingChapterIndex(b), 1);
+    });
+
+    test('handles a longer right side (insertion at end)', () {
+      final a = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+      ]);
+      final b = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+        Chapter(title: 'D', start: Duration(seconds: 15)),
+      ]);
+      expect(a.firstDifferingChapterIndex(b), 3);
+    });
+
+    test('handles a shorter right side (deletion at index)', () {
+      final a = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'B', start: Duration(seconds: 5)),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+        Chapter(title: 'D', start: Duration(seconds: 15)),
+      ]);
+      final b = book(const [
+        Chapter(title: 'A', start: Duration.zero),
+        Chapter(title: 'C', start: Duration(seconds: 10)),
+        Chapter(title: 'D', start: Duration(seconds: 15)),
+      ]);
+      expect(a.firstDifferingChapterIndex(b), 1);
+    });
+  });
 }

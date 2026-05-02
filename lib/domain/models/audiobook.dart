@@ -154,3 +154,19 @@ class Audiobook {
         _chapterEq.hash(chapters),
       );
 }
+
+extension AudiobookDiff on Audiobook {
+  /// Returns the index of the first chapter that differs between this and
+  /// [other], using `Chapter`'s value equality. If lengths differ, the
+  /// index is the shorter list's length (the first divergent slot).
+  /// Returns null when every shared chapter is equal AND lengths match.
+  int? firstDifferingChapterIndex(Audiobook other) {
+    final n =
+        chapters.length < other.chapters.length ? chapters.length : other.chapters.length;
+    for (var i = 0; i < n; i++) {
+      if (chapters[i] != other.chapters[i]) return i;
+    }
+    if (chapters.length != other.chapters.length) return n;
+    return null;
+  }
+}
