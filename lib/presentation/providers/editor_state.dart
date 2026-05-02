@@ -13,21 +13,36 @@ enum SetChapterStartError { duplicate, firstNotZero }
 
 @immutable
 class EditorState {
-  const EditorState({this.audiobook, this.path, this.isDirty = false});
+  const EditorState({
+    this.audiobook,
+    this.path,
+    this.isDirty = false,
+    this.undoStack = const [],
+    this.redoStack = const [],
+  });
 
   final Audiobook? audiobook;
   final String? path;
   final bool isDirty;
+  final List<Audiobook> undoStack;
+  final List<Audiobook> redoStack;
+
+  bool get canUndo => undoStack.isNotEmpty;
+  bool get canRedo => redoStack.isNotEmpty;
 
   EditorState copyWith({
     Audiobook? audiobook,
     String? path,
     bool? isDirty,
+    List<Audiobook>? undoStack,
+    List<Audiobook>? redoStack,
   }) =>
       EditorState(
         audiobook: audiobook ?? this.audiobook,
         path: path ?? this.path,
         isDirty: isDirty ?? this.isDirty,
+        undoStack: undoStack ?? this.undoStack,
+        redoStack: redoStack ?? this.redoStack,
       );
 }
 
@@ -49,6 +64,8 @@ final editorProvider =
     NotifierProvider<EditorNotifier, EditorState>(EditorNotifier.new);
 
 class EditorNotifier extends Notifier<EditorState> {
+  Audiobook? _editSnapshot;
+
   @override
   EditorState build() => const EditorState();
 
@@ -56,6 +73,7 @@ class EditorNotifier extends Notifier<EditorState> {
 
   Future<void> open(String path) async {
     final book = await _bookbinder.read(path);
+    _editSnapshot = null;
     state = EditorState(audiobook: book, path: path);
   }
 
@@ -83,6 +101,8 @@ class EditorNotifier extends Notifier<EditorState> {
     state = state.copyWith(path: newPath, isDirty: false);
   }
 
+  // ===== Continuous ops (no push; rely on session) =====
+
   void setTitle(String value) =>
       _updateBook((b) => b.copyWith(title: value));
   void setAuthor(String value) =>
@@ -95,12 +115,24 @@ class EditorNotifier extends Notifier<EditorState> {
       _updateBook((b) => b.copyWith(description: value));
   void setYear(int? value) => _updateBook((b) => b.copyWith(year: value));
 
+  void renameChapter(int index, String title) {
+    _updateBook((book) {
+      final updated = [...book.chapters];
+      updated[index] = updated[index].copyWith(title: title);
+      return book.copyWith(chapters: updated);
+    });
+  }
+
+  // ===== Discrete ops (push immediately; close any open session first) =====
+
   void addChapter() {
+    _pushUndo();
     _updateBook((book) {
       final last = book.chapters.last;
       final lastEnd = book.totalDuration;
       final newStart = Duration(
-        microseconds: (last.start.inMicroseconds + lastEnd.inMicroseconds) ~/ 2,
+        microseconds:
+            (last.start.inMicroseconds + lastEnd.inMicroseconds) ~/ 2,
       );
       return book.copyWith(
         chapters: [
@@ -112,10 +144,11 @@ class EditorNotifier extends Notifier<EditorState> {
   }
 
   void deleteChapter(int index) {
+    final book = state.audiobook;
+    if (book == null || book.chapters.length <= 1) return;
+    _pushUndo();
     _updateBook((book) {
-      if (book.chapters.length <= 1) return book; // never delete the last chapter
       final updated = [...book.chapters]..removeAt(index);
-      // After deletion, ensure first chapter starts at zero (Audiobook invariant).
       if (index == 0) {
         updated[0] = updated[0].copyWith(start: Duration.zero);
       }
@@ -134,33 +167,20 @@ class EditorNotifier extends Notifier<EditorState> {
     });
   }
 
-  void renameChapter(int index, String title) {
-    _updateBook((book) {
-      final updated = [...book.chapters];
-      updated[index] = updated[index].copyWith(title: title);
-      return book.copyWith(chapters: updated);
-    });
-  }
-
   SetChapterStartError? setChapterStart(int index, Duration start) {
     final book = state.audiobook;
     if (book == null) return null;
 
-    // 1. Clamp into [0, totalDuration - 1ms].
     final maxAllowed = book.totalDuration - const Duration(milliseconds: 1);
     Duration clamped = start;
     if (clamped < Duration.zero) clamped = Duration.zero;
     if (clamped > maxAllowed) clamped = maxAllowed;
 
-    // 2. Build candidate, capturing the new chapter instance for identity tracking.
     final movedChapter = book.chapters[index].copyWith(start: clamped);
     final candidate = [...book.chapters];
     candidate[index] = movedChapter;
-
-    // 3. Sort by start.
     candidate.sort((a, b) => a.start.compareTo(b.start));
 
-    // 4. Validate invariants.
     for (var i = 1; i < candidate.length; i++) {
       if (candidate[i].start == candidate[i - 1].start) {
         return SetChapterStartError.duplicate;
@@ -170,7 +190,8 @@ class EditorNotifier extends Notifier<EditorState> {
       return SetChapterStartError.firstNotZero;
     }
 
-    // 5. Commit.
+    _pushUndo();
+
     final newBook = Audiobook.validated(
       title: book.title,
       author: book.author,
@@ -185,8 +206,6 @@ class EditorNotifier extends Notifier<EditorState> {
     );
     state = state.copyWith(audiobook: newBook, isDirty: true);
 
-    // 6. Update selection if the moved chapter is the selected one and its
-    //    index changed.
     final currentlySelected = ref.read(selectedChapterProvider);
     if (currentlySelected == index) {
       final newIndex =
@@ -196,23 +215,100 @@ class EditorNotifier extends Notifier<EditorState> {
       }
     }
 
-    // 7. Seek the playhead to the new start so the user can hear it.
     ref.read(playbackControllerProvider).seek(clamped);
-
     return null;
   }
 
   void clearCover() {
     final book = state.audiobook;
-    if (book == null) return;
+    if (book == null || book.cover == null) return;
+    _pushUndo();
     state = state.copyWith(
       audiobook: book.copyWith(clearCover: true),
       isDirty: true,
     );
   }
 
-  void replaceCover(Cover cover) =>
-      _updateBook((b) => b.copyWith(cover: cover));
+  void replaceCover(Cover cover) {
+    _pushUndo();
+    _updateBook((b) => b.copyWith(cover: cover));
+  }
+
+  // ===== Field-edit session =====
+
+  void beginFieldEdit() {
+    if (_editSnapshot != null) return; // re-focusing same field is a no-op
+    final book = state.audiobook;
+    if (book == null) return;
+    _editSnapshot = book;
+  }
+
+  void endFieldEdit() {
+    final snapshot = _editSnapshot;
+    _editSnapshot = null;
+    if (snapshot == null) return;
+    final book = state.audiobook;
+    if (book == null || identical(book, snapshot) || book == snapshot) return;
+    state = state.copyWith(
+      undoStack: [...state.undoStack, snapshot],
+      redoStack: const [],
+    );
+  }
+
+  void cancelFieldEdit() {
+    final snapshot = _editSnapshot;
+    _editSnapshot = null;
+    if (snapshot == null) return;
+    state = state.copyWith(audiobook: snapshot, isDirty: state.isDirty);
+  }
+
+  // ===== Undo / redo =====
+
+  void undo() {
+    if (state.undoStack.isEmpty) return;
+    _editSnapshot = null;
+    final book = state.audiobook;
+    final undoStack = state.undoStack;
+    final newAudiobook = undoStack.last;
+    state = state.copyWith(
+      audiobook: newAudiobook,
+      undoStack: undoStack.sublist(0, undoStack.length - 1),
+      redoStack:
+          book == null ? state.redoStack : [...state.redoStack, book],
+      isDirty: true,
+    );
+  }
+
+  void redo() {
+    if (state.redoStack.isEmpty) return;
+    _editSnapshot = null;
+    final book = state.audiobook;
+    final redoStack = state.redoStack;
+    final newAudiobook = redoStack.last;
+    state = state.copyWith(
+      audiobook: newAudiobook,
+      undoStack:
+          book == null ? state.undoStack : [...state.undoStack, book],
+      redoStack: redoStack.sublist(0, redoStack.length - 1),
+      isDirty: true,
+    );
+  }
+
+  // ===== Internals =====
+
+  /// Records the current audiobook on the undo stack and clears the redo
+  /// stack. Discrete ops call this before mutating; closes any open session
+  /// to keep undo steps in chronological order.
+  void _pushUndo() {
+    // Close any open continuous-edit session first; that may itself push.
+    endFieldEdit();
+    final book = state.audiobook;
+    if (book == null) return;
+    state = state.copyWith(
+      undoStack: [...state.undoStack, book],
+      redoStack: const [],
+    );
+  }
 
   void _updateBook(Audiobook Function(Audiobook book) f) {
     final book = state.audiobook;

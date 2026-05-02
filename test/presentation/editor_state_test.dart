@@ -347,4 +347,178 @@ void main() {
       expect(playback.seeks, [const Duration(milliseconds: 29999)]);
     });
   });
+
+  group('undo/redo', () {
+    Audiobook book3() => Audiobook.validated(
+          title: 'Original',
+          chapters: const [
+            Chapter(title: 'A', start: Duration.zero),
+            Chapter(title: 'B', start: Duration(seconds: 5)),
+            Chapter(title: 'C', start: Duration(seconds: 10)),
+          ],
+          totalDuration: const Duration(seconds: 30),
+        );
+
+    test('discrete op pushes one undo step; undo reverts', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+      expect(
+        container.read(editorProvider).audiobook!.chapters.length,
+        4,
+      );
+      expect(container.read(editorProvider).canUndo, isTrue);
+
+      container.read(editorProvider.notifier).undo();
+      expect(
+        container.read(editorProvider).audiobook!.chapters.length,
+        3,
+      );
+      expect(container.read(editorProvider).canUndo, isFalse);
+      expect(container.read(editorProvider).canRedo, isTrue);
+    });
+
+    test('continuous op without session does not push', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).setTitle('Foo');
+      expect(container.read(editorProvider).canUndo, isFalse);
+    });
+
+    test('begin then end with no change pushes nothing', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.endFieldEdit();
+      expect(container.read(editorProvider).canUndo, isFalse);
+    });
+
+    test('session with continuous mutations pushes one step', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.setTitle('Foo');
+      n.setTitle('FooBar');
+      n.endFieldEdit();
+
+      expect(container.read(editorProvider).audiobook!.title, 'FooBar');
+      expect(container.read(editorProvider).canUndo, isTrue);
+
+      n.undo();
+      expect(container.read(editorProvider).audiobook!.title, 'Original');
+    });
+
+    test('cancelFieldEdit reverts state and pushes nothing', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.setTitle('Foo');
+      n.cancelFieldEdit();
+
+      expect(container.read(editorProvider).audiobook!.title, 'Original');
+      expect(container.read(editorProvider).canUndo, isFalse);
+    });
+
+    test('discrete op during session closes the session first', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.setTitle('Foo');
+      n.addChapter();
+
+      // Two undo steps recorded: one for the title edit (closed by addChapter),
+      // one for addChapter itself.
+      n.undo();
+      // Most recent op is addChapter — undo it.
+      expect(container.read(editorProvider).audiobook!.chapters.length, 3);
+      expect(container.read(editorProvider).audiobook!.title, 'Foo');
+
+      n.undo();
+      expect(container.read(editorProvider).audiobook!.title, 'Original');
+      expect(container.read(editorProvider).canUndo, isFalse);
+    });
+
+    test('redo reverses an undo', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.beginFieldEdit();
+      n.setTitle('Foo');
+      n.endFieldEdit();
+      n.undo();
+      expect(container.read(editorProvider).audiobook!.title, 'Original');
+
+      n.redo();
+      expect(container.read(editorProvider).audiobook!.title, 'Foo');
+    });
+
+    test('any new mutation after undo clears redo stack', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.addChapter();
+      n.undo();
+      expect(container.read(editorProvider).canRedo, isTrue);
+
+      n.addChapter();
+      expect(container.read(editorProvider).canRedo, isFalse);
+    });
+
+    test('open clears both stacks', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.addChapter();
+      n.undo();
+      expect(container.read(editorProvider).canUndo, isFalse);
+      expect(container.read(editorProvider).canRedo, isTrue);
+
+      await n.open('/tmp/x.m4b');
+      expect(container.read(editorProvider).canUndo, isFalse);
+      expect(container.read(editorProvider).canRedo, isFalse);
+    });
+
+    test('save leaves stacks alone', () async {
+      final fake = _FakeBookbinder(book3());
+      final container = makeContainer(fake);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      final n = container.read(editorProvider.notifier);
+      n.addChapter();
+      await n.save();
+      expect(container.read(editorProvider).canUndo, isTrue);
+    });
+  });
 }
