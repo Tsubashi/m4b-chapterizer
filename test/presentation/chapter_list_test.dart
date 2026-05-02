@@ -280,4 +280,61 @@ void main() {
       'Alpha',
     );
   });
+
+  testWidgets('ChapterList scrolls to the selected chapter on selection change',
+      (tester) async {
+    // 12 chapters, 200px tall surface — chapter 8 is well below the fold.
+    addTearDown(() => tester.view.resetPhysicalSize());
+    tester.view.physicalSize = const Size(400, 200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final book = Audiobook.validated(
+      chapters: List.generate(
+        12,
+        (i) => Chapter(
+          title: 'Ch $i',
+          start: Duration(seconds: i * 5),
+        ),
+      ),
+      totalDuration: const Duration(seconds: 200),
+    );
+    final fake = _StubBookbinder(book);
+    final playback = _RecordingPlayback();
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(playback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: ChapterList())),
+    ));
+    await tester.pumpAndSettle();
+
+    // Locate the ListView's scrollable. TextFields render their own
+    // Scrollables inside the rows, so we take the outermost one.
+    final scrollable = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final initialOffset = tester.widget<Scrollable>(scrollable)
+        .controller!
+        .position
+        .pixels;
+    expect(initialOffset, 0);
+
+    container.read(selectedChapterProvider.notifier).state = 8;
+    await tester.pumpAndSettle();
+
+    final afterOffset = tester.widget<Scrollable>(scrollable)
+        .controller!
+        .position
+        .pixels;
+    expect(afterOffset, greaterThan(200),
+        reason: 'list should scroll past the initial viewport to row 8');
+  });
 }

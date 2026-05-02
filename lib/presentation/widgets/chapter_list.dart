@@ -12,11 +12,39 @@ final selectedChapterProvider = StateProvider<int>((ref) => 0);
 final chapterTitleFocusNodesProvider =
     Provider<Map<int, FocusNode>>((ref) => <int, FocusNode>{});
 
-class ChapterList extends ConsumerWidget {
+class ChapterList extends ConsumerStatefulWidget {
   const ChapterList({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChapterList> createState() => _ChapterListState();
+}
+
+class _ChapterListState extends ConsumerState<ChapterList> {
+  static const double _kRowHeight = 64;
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onSelectionChanged(int? prev, int next) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final target = (next * _kRowHeight)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<int>(selectedChapterProvider, _onSelectionChanged);
+
     final book = ref.watch(editorProvider).audiobook;
     final selected = ref.watch(selectedChapterProvider);
     final notifier = ref.read(editorProvider.notifier);
@@ -26,6 +54,7 @@ class ChapterList extends ConsumerWidget {
       children: [
         Expanded(
           child: ListView.builder(
+            controller: _scrollController,
             itemCount: book.chapters.length,
             itemBuilder: (context, i) {
               final chapter = book.chapters[i];
