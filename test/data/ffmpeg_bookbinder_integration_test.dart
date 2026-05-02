@@ -1,31 +1,18 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:m4b_chapterizer/data/binary_resolver.dart';
 import 'package:m4b_chapterizer/data/ffmpeg_bookbinder.dart';
 import 'package:m4b_chapterizer/data/process_runner.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 
-bool _ffmpegOnPath() {
-  try {
-    final result = Process.runSync('ffmpeg', ['-version']);
-    return result.exitCode == 0;
-  } on ProcessException {
-    return false;
-  }
-}
+import '../helpers/bundled_test_resolver.dart';
 
 void main() {
-  if (!_ffmpegOnPath()) {
-    test('skipped: ffmpeg not on PATH', () {}, skip: true);
-    return;
-  }
-
   test('read → mutate → write → read round-trip preserves chapters and metadata',
       () async {
     final bookbinder = FfmpegBookbinder(
       runner: const SystemProcessRunner(),
-      binaries: const SystemBinaryResolver(),
+      binaries: bundledTestResolver(),
     );
 
     final tempDir = await Directory.systemTemp.createTemp('m4b-rt-');
