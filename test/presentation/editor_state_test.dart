@@ -50,6 +50,7 @@ class _NullPlayback implements PlaybackController {
 
 class _RecordingPlayback implements PlaybackController {
   final List<Duration> seeks = [];
+  Duration currentPosition = Duration.zero;
   @override
   Future<void> setSource(String path) async {}
   @override
@@ -59,9 +60,10 @@ class _RecordingPlayback implements PlaybackController {
   @override
   Future<void> seek(Duration position) async {
     seeks.add(position);
+    currentPosition = position;
   }
   @override
-  Duration get position => Duration.zero;
+  Duration get position => currentPosition;
   @override
   bool get playing => false;
   @override
@@ -519,6 +521,69 @@ void main() {
       n.addChapter();
       await n.save();
       expect(container.read(editorProvider).canUndo, isTrue);
+    });
+  });
+
+  group('addChapter inserts at the playhead', () {
+    Audiobook threeChapterBook() => Audiobook.validated(
+          chapters: const [
+            Chapter(title: 'A', start: Duration.zero),
+            Chapter(title: 'B', start: Duration(seconds: 10)),
+            Chapter(title: 'C', start: Duration(seconds: 20)),
+          ],
+          totalDuration: const Duration(seconds: 30),
+        );
+
+    test('uses the current playback position as the new start', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 7);
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.chapters.length, 4);
+      // After sort: 0, 7, 10, 20.
+      expect(book.chapters[1].start, const Duration(seconds: 7));
+      expect(book.chapters[1].title, 'New chapter');
+    });
+
+    test('clamps a position past totalDuration', () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 60); // past 30s total
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.chapters.length, 4);
+      expect(book.chapters.last.start,
+          const Duration(milliseconds: 29999));
+    });
+
+    test('bumps by 1ms when the playhead is exactly on an existing chapter',
+        () async {
+      final fake = _FakeBookbinder(threeChapterBook());
+      // Park the playhead exactly on chapter B's start.
+      final playback = _RecordingPlayback()
+        ..currentPosition = const Duration(seconds: 10);
+      final container = makeContainer(fake, playback: playback);
+      addTearDown(container.dispose);
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+      container.read(editorProvider.notifier).addChapter();
+
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.chapters.length, 4);
+      // After sort: 0, 10 (B), 10.001 (new), 20.
+      expect(book.chapters[2].start,
+          const Duration(seconds: 10, milliseconds: 1));
     });
   });
 }

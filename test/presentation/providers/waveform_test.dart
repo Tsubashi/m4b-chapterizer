@@ -8,6 +8,7 @@ import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
+import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/providers/waveform.dart';
 
 class _StubBookbinder implements Bookbinder {
@@ -29,6 +30,27 @@ class _StubBookbinder implements Bookbinder {
     required String destinationPath,
     required Audiobook audiobook,
   }) async {}
+}
+
+class _NullPlayback implements PlaybackController {
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async {}
+  @override
+  Future<void> pause() async {}
+  @override
+  Future<void> seek(Duration position) async {}
+  @override
+  Duration get position => Duration.zero;
+  @override
+  bool get playing => false;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Future<void> dispose() async {}
 }
 
 class _RecordingExtractor implements WaveformExtractor {
@@ -70,6 +92,7 @@ void main() {
     final spy = _RecordingExtractor();
     final container = ProviderContainer(overrides: [
       bookbinderProvider.overrideWithValue(_StubBookbinder(_book('First'))),
+      playbackControllerProvider.overrideWithValue(_NullPlayback()),
       waveformExtractorProvider.overrideWithValue(spy),
     ]);
     addTearDown(container.dispose);
@@ -94,6 +117,7 @@ void main() {
     final stub = _StubBookbinder(_book('First'))..swapTo = _book('Second');
     final container = ProviderContainer(overrides: [
       bookbinderProvider.overrideWithValue(stub),
+      playbackControllerProvider.overrideWithValue(_NullPlayback()),
       waveformExtractorProvider.overrideWithValue(spy),
     ]);
     addTearDown(container.dispose);

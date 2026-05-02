@@ -126,19 +126,40 @@ class EditorNotifier extends Notifier<EditorState> {
   // ===== Discrete ops (push immediately; close any open session first) =====
 
   void addChapter() {
+    final book = state.audiobook;
+    if (book == null) return;
+
+    // Insert at the current playhead, clamped to (0, totalDuration). Bump in
+    // 1ms steps to find a free slot if the playhead exactly matches an
+    // existing chapter start (e.g., user is parked at chapter 0 = 0:00).
+    Duration newStart =
+        ref.read(playbackControllerProvider).position;
+    final maxStart = book.totalDuration - const Duration(milliseconds: 1);
+    if (newStart < Duration.zero) newStart = Duration.zero;
+    if (newStart > maxStart) newStart = maxStart;
+    final taken = {for (final c in book.chapters) c.start};
+    while (taken.contains(newStart) && newStart <= maxStart) {
+      newStart = newStart + const Duration(milliseconds: 1);
+    }
+    if (newStart > maxStart) return; // no room near the playhead
+
     _pushUndo();
     _updateBook((book) {
-      final last = book.chapters.last;
-      final lastEnd = book.totalDuration;
-      final newStart = Duration(
-        microseconds:
-            (last.start.inMicroseconds + lastEnd.inMicroseconds) ~/ 2,
-      );
-      return book.copyWith(
-        chapters: [
-          ...book.chapters,
-          Chapter(title: 'New chapter', start: newStart),
-        ],
+      final updated = [
+        ...book.chapters,
+        Chapter(title: 'New chapter', start: newStart),
+      ]..sort((a, b) => a.start.compareTo(b.start));
+      return Audiobook.validated(
+        title: book.title,
+        author: book.author,
+        narrator: book.narrator,
+        album: book.album,
+        genre: book.genre,
+        description: book.description,
+        year: book.year,
+        cover: book.cover,
+        chapters: updated,
+        totalDuration: book.totalDuration,
       );
     });
   }
