@@ -101,4 +101,42 @@ void main() {
     expect(find.widgetWithText(TextField, 'Another Title'), findsOneWidget);
     expect(find.widgetWithText(TextField, 'A Title'), findsNothing);
   });
+
+  testWidgets('focus → mutate → blur on title field pushes one undo step',
+      (tester) async {
+    final fake = _StubBookbinder(Audiobook.validated(
+      title: 'Old',
+      chapters: const [Chapter(title: 'C', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 5),
+    ));
+    final container = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: MetadataForm())),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(container.read(editorProvider).canUndo, isFalse);
+
+    final titleKey = const ValueKey('metadata.title');
+    await tester.tap(find.byKey(titleKey));
+    await tester.pump();
+    await tester.enterText(find.byKey(titleKey), 'Brand New');
+    await tester.pump();
+
+    // No push yet — still in session.
+    expect(container.read(editorProvider).canUndo, isFalse);
+
+    // Defocus the field.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    expect(container.read(editorProvider).canUndo, isTrue);
+    container.read(editorProvider.notifier).undo();
+    expect(container.read(editorProvider).audiobook!.title, 'Old');
+  });
 }
