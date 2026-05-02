@@ -140,6 +140,89 @@ void main() {
     expect(container.read(editorProvider).audiobook!.title, 'Old');
   });
 
+  testWidgets(
+      'editing three different fields produces three independent undo steps',
+      (tester) async {
+    final fake = _StubBookbinder(Audiobook.validated(
+      title: 'OldTitle',
+      author: 'OldAuthor',
+      narrator: 'OldNarrator',
+      chapters: const [Chapter(title: 'C', start: Duration.zero)],
+      totalDuration: const Duration(seconds: 5),
+    ));
+    final container = ProviderContainer(
+      overrides: [bookbinderProvider.overrideWithValue(fake)],
+    );
+    addTearDown(container.dispose);
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: MetadataForm())),
+    ));
+    await tester.pumpAndSettle();
+
+    final titleKey = const ValueKey('metadata.title');
+    final authorKey = const ValueKey('metadata.author');
+    final narratorKey = const ValueKey('metadata.narrator');
+
+    // 1. Tap the Title field; type 'NewTitle'.
+    await tester.tap(find.byKey(titleKey));
+    await tester.pump();
+    await tester.enterText(find.byKey(titleKey), 'NewTitle');
+    await tester.pump();
+
+    // 2. Tap the Author field (this blurs Title); type 'NewAuthor'.
+    await tester.tap(find.byKey(authorKey));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(authorKey), 'NewAuthor');
+    await tester.pump();
+
+    // 3. Tap the Narrator field (blurs Author); type 'NewNarrator'.
+    await tester.tap(find.byKey(narratorKey));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(narratorKey), 'NewNarrator');
+    await tester.pump();
+
+    // 4. Defocus.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    // 5. Three undo steps recorded — one per field session.
+    expect(container.read(editorProvider).undoStack.length, 3);
+
+    final notifier = container.read(editorProvider.notifier);
+
+    // 6. Undo once: narrator reverts; title/author still new.
+    notifier.undo();
+    await tester.pumpAndSettle();
+    {
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.narrator, 'OldNarrator');
+      expect(book.author, 'NewAuthor');
+      expect(book.title, 'NewTitle');
+    }
+
+    // 7. Undo again: author reverts.
+    notifier.undo();
+    await tester.pumpAndSettle();
+    {
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.author, 'OldAuthor');
+      expect(book.title, 'NewTitle');
+      expect(book.narrator, 'OldNarrator');
+    }
+
+    // 8. Undo again: title reverts.
+    notifier.undo();
+    await tester.pumpAndSettle();
+    {
+      final book = container.read(editorProvider).audiobook!;
+      expect(book.title, 'OldTitle');
+      expect(book.author, 'OldAuthor');
+      expect(book.narrator, 'OldNarrator');
+    }
+  });
+
   testWidgets('undo after a metadata edit also reverts the visible field text',
       (tester) async {
     final fake = _StubBookbinder(Audiobook.validated(

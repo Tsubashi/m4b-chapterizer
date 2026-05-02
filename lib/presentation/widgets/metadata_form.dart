@@ -20,26 +20,30 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
   late final _year = TextEditingController();
   late final _description = TextEditingController();
 
-  late final _titleFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _authorFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _narratorFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _albumFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _genreFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _yearFocus = FocusNode()..addListener(_onFocusChanged);
-  late final _descriptionFocus = FocusNode()..addListener(_onFocusChanged);
+  // Each field gets its own focus listener that watches *its own* focus
+  // state. When focus moves from A → B, A's listener fires first
+  // (focus-lost → endFieldEdit pushes A's snapshot if changed), then B's
+  // listener fires (focus-gained → beginFieldEdit opens a new session).
+  // This yields one undo step per per-field edit session, matching the
+  // chapter-row behavior in `_ChapterRowState`.
+  late final FocusNode _titleFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_titleFocus));
+  late final FocusNode _authorFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_authorFocus));
+  late final FocusNode _narratorFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_narratorFocus));
+  late final FocusNode _albumFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_albumFocus));
+  late final FocusNode _genreFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_genreFocus));
+  late final FocusNode _yearFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_yearFocus));
+  late final FocusNode _descriptionFocus = FocusNode()
+    ..addListener(() => _onFieldFocusChanged(_descriptionFocus));
 
-  void _onFocusChanged() {
-    final anyFocused = [
-      _titleFocus,
-      _authorFocus,
-      _narratorFocus,
-      _albumFocus,
-      _genreFocus,
-      _yearFocus,
-      _descriptionFocus,
-    ].any((n) => n.hasFocus);
+  void _onFieldFocusChanged(FocusNode node) {
     final notifier = ref.read(editorProvider.notifier);
-    if (anyFocused) {
+    if (node.hasFocus) {
       notifier.beginFieldEdit();
     } else {
       notifier.endFieldEdit();
