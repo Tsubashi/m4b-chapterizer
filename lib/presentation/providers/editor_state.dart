@@ -171,13 +171,14 @@ class EditorNotifier extends Notifier<EditorState> {
         totalDuration: book.totalDuration,
       );
     });
-    // Select the newly-inserted chapter so the UI scrolls to it.
+    // Select the newly-inserted chapter and ask the list to scroll to it.
     final book2 = state.audiobook;
     if (book2 != null) {
       final idx =
           book2.chapters.indexWhere((c) => c.start == newStart);
       if (idx >= 0) {
         ref.read(selectedChapterProvider.notifier).state = idx;
+        ref.read(chapterScrollRequestProvider.notifier).state++;
       }
     }
   }
@@ -213,6 +214,10 @@ class EditorNotifier extends Notifier<EditorState> {
       if (clamped != cur) {
         ref.read(selectedChapterProvider.notifier).state = clamped;
       }
+      // Always request a scroll on delete — the row at the previous index is
+      // gone and the user wants confirmation that something happened, even
+      // when the selected index didn't change.
+      ref.read(chapterScrollRequestProvider.notifier).state++;
     }
   }
 
@@ -259,6 +264,7 @@ class EditorNotifier extends Notifier<EditorState> {
         candidate.indexWhere((c) => identical(c, movedChapter));
     if (newIndex >= 0) {
       ref.read(selectedChapterProvider.notifier).state = newIndex;
+      ref.read(chapterScrollRequestProvider.notifier).state++;
     }
 
     ref.read(playbackControllerProvider).seek(clamped);

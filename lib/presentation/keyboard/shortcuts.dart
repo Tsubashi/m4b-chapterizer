@@ -7,7 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../widgets/chapter_list.dart'
-    show selectedChapterProvider, chapterTitleFocusNodesProvider;
+    show
+        chapterScrollRequestProvider,
+        chapterTitleFocusNodesProvider,
+        selectedChapterProvider;
 import 'editor_actions.dart';
 
 class PlayPauseIntent extends Intent {
@@ -221,6 +224,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             if (next == cur) return null;
             ref.read(selectedChapterProvider.notifier).state = next;
             ref.read(playbackControllerProvider).seek(book.chapters[next].start);
+            ref.read(chapterScrollRequestProvider.notifier).state++;
             return null;
           }),
           DeleteSelectedChapterIntent:

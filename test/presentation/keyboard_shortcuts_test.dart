@@ -13,7 +13,10 @@ import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/screens/editor_screen.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart'
-    show selectedChapterProvider, chapterTitleFocusNodesProvider;
+    show
+        chapterScrollRequestProvider,
+        chapterTitleFocusNodesProvider,
+        selectedChapterProvider;
 
 void main() {
   group('editorShortcuts keymap', () {
@@ -366,6 +369,22 @@ void _registerWidgetTests() {
 
       expect(h.container.read(selectedChapterProvider), 1);
       expect(h.playback.seeks, [const Duration(seconds: 10)]);
+    });
+
+    testWidgets('ArrowDown bumps the scroll request counter',
+        (tester) async {
+      final h = await _pumpEditor(tester);
+      h.container.read(selectedChapterProvider.notifier).state = 0;
+      final before = h.container.read(chapterScrollRequestProvider);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+
+      expect(
+        h.container.read(chapterScrollRequestProvider),
+        greaterThan(before),
+        reason: 'arrow nav should request a scroll-into-view',
+      );
     });
 
     testWidgets('ArrowUp at index 0 does not move selection or seek',

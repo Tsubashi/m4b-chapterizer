@@ -76,6 +76,11 @@ class _ChapterListState extends ConsumerState<ChapterList> {
         Expanded(
           child: ListView.builder(
             controller: _scrollController,
+            // Pin every row to exactly _kRowHeight so the scroll math in
+            // _ensureSelectedVisible matches reality. Without this, ListTile
+            // measures itself and rows can be shorter than our estimate,
+            // causing the computed offset to overshoot.
+            itemExtent: _kRowHeight,
             itemCount: book.chapters.length,
             itemBuilder: (context, i) {
               final chapter = book.chapters[i];
