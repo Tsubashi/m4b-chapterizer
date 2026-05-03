@@ -5,6 +5,7 @@ import 'data/bundled_binary_resolver.dart';
 import 'data/ffmpeg_bookbinder.dart';
 import 'data/process_runner.dart';
 import 'presentation/app.dart';
+import 'presentation/drag_drop/drag_drop_channel.dart';
 import 'presentation/providers/editor_state.dart';
 
 void main() {
@@ -18,6 +19,9 @@ void main() {
             runner: const SystemProcessRunner(),
             binaries: resolver,
           ),
+        ),
+        dragDropChannelProvider.overrideWithValue(
+          MethodChannelDragDropChannel(),
         ),
       ],
       child: const M4bChapterizerApp(),
