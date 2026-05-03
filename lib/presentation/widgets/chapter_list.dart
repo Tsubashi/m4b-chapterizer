@@ -73,6 +73,7 @@ class _ChapterListState extends ConsumerState<ChapterList> {
             },
           ),
         ),
+        const Divider(height: 1),
         OverflowBar(
           alignment: MainAxisAlignment.spaceEvenly,
           overflowAlignment: OverflowBarAlignment.center,
@@ -226,6 +227,7 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
                 focusNode: _startFocusNode,
                 controller: _startController,
                 onTap: widget.onTap,
+                decoration: const InputDecoration(isDense: true),
                 onSubmitted: (v) {
                   Duration parsed;
                   try {
