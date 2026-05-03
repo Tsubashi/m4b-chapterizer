@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Events emitted by the platform drag-drop channel as the user drags
@@ -41,3 +44,44 @@ final dragDropChannelProvider = Provider<DragDropChannel>((ref) {
   );
   // coverage:ignore-end
 });
+
+// coverage:ignore-start
+// Production implementation. The platform side (Swift on macOS, future
+// C++ on Windows, GTK on Linux) sends three method calls over this
+// channel: 'dragEntered' (no args), 'dragExited' (no args), and
+// 'filesDropped' with `paths: List<String>`. Exercised only by smoke
+// tests on a real desktop build.
+
+/// Platform-channel-backed drag-drop event stream.
+class MethodChannelDragDropChannel implements DragDropChannel {
+  MethodChannelDragDropChannel({MethodChannel? channel})
+      : _channel = channel ??
+            const MethodChannel('m4b_chapterizer/drag_drop') {
+    _channel.setMethodCallHandler(_onCall);
+  }
+
+  final MethodChannel _channel;
+  final StreamController<DragEvent> _controller =
+      StreamController<DragEvent>.broadcast();
+
+  @override
+  Stream<DragEvent> get events => _controller.stream;
+
+  Future<void> _onCall(MethodCall call) async {
+    switch (call.method) {
+      case 'dragEntered':
+        _controller.add(const DragEntered());
+      case 'dragExited':
+        _controller.add(const DragExited());
+      case 'filesDropped':
+        final raw = (call.arguments as Map?)?['paths'] as List? ?? const [];
+        _controller.add(FilesDropped(raw.cast<String>()));
+    }
+  }
+
+  void dispose() {
+    _channel.setMethodCallHandler(null);
+    _controller.close();
+  }
+}
+// coverage:ignore-end
