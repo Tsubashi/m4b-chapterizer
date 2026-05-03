@@ -33,7 +33,13 @@ class EditorScreen extends ConsumerWidget {
       appBar: AppBar(
         title: Row(
           children: [
-            Text(filename),
+            Flexible(
+              child: Text(
+                filename,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ),
             const SizedBox(width: 8),
             if (state.isDirty) const Text('•'),
           ],

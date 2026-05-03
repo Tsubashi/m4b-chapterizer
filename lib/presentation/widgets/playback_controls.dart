@@ -63,9 +63,13 @@ class PlaybackControls extends ConsumerWidget {
               const SizedBox(width: 12),
               StreamBuilder<Duration>(
                 stream: controller.positionStream,
-                builder: (context, snapshot) => Text(
-                  formatDuration(snapshot.data ?? controller.position),
-                ),
+                builder: (context, snapshot) {
+                  final current = snapshot.data ?? controller.position;
+                  final total = book?.totalDuration ?? Duration.zero;
+                  return Text(
+                    '${formatDuration(current)} / ${formatDuration(total)}',
+                  );
+                },
               ),
               const Spacer(),
               Row(
