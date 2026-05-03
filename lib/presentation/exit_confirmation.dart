@@ -1,6 +1,7 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
 
 import 'providers/editor_state.dart';
 
@@ -60,14 +61,21 @@ Future<bool> handleExitRequest(BuildContext context, WidgetRef ref) async {
 }
 
 // coverage:ignore-start
-// Window-manager glue. The OS-level close event is delivered through a
-// platform method channel that isn't exercised by `flutter test`; this
-// widget is exercised only by smoke tests on a real desktop build. The
+// Bridge to Flutter's built-in app-exit request mechanism. The OS-level
+// close event (red X / Cmd+W on the last window / Cmd+Q) reaches this
+// widget through `WidgetsBindingObserver.didRequestAppExit`, which the
+// Flutter macOS embedder wires to NSApplicationDelegate's
+// `applicationShouldTerminate`. On macOS the AppDelegate sets
+// `applicationShouldTerminateAfterLastWindowClosed` to true, so closing
+// the only window also routes through this path.
+//
+// The OS event delivery itself is not exercised by `flutter test`; this
+// class is exercised only by smoke tests on a real desktop build. The
 // testable logic is in [handleExitRequest] above.
 
-/// Wraps [child] and intercepts OS window-close attempts (red X, Cmd+W,
-/// Cmd+Q). On close, calls [handleExitRequest] and either destroys the
-/// window or stays.
+/// Wraps [child] and intercepts OS app-exit requests (red X, Cmd+Q). On
+/// request, calls [handleExitRequest] and returns either
+/// [AppExitResponse.exit] or [AppExitResponse.cancel].
 class WindowCloseGuard extends ConsumerStatefulWidget {
   const WindowCloseGuard({super.key, required this.child});
 
@@ -78,26 +86,24 @@ class WindowCloseGuard extends ConsumerStatefulWidget {
 }
 
 class _WindowCloseGuardState extends ConsumerState<WindowCloseGuard>
-    with WindowListener {
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
-  Future<void> onWindowClose() async {
-    if (!mounted) return;
+  Future<AppExitResponse> didRequestAppExit() async {
+    if (!mounted) return AppExitResponse.exit;
     final shouldExit = await handleExitRequest(context, ref);
-    if (shouldExit) {
-      await windowManager.destroy();
-    }
+    return shouldExit ? AppExitResponse.exit : AppExitResponse.cancel;
   }
 
   @override
