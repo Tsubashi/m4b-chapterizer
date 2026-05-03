@@ -14,12 +14,13 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     // leaving the app running with no visible window.
     self.delegate = self
 
-    // Minimum window size: enough room for the fixed-width 280px
-    // cover/metadata panel plus the 1px divider plus 142px for the
-    // chapter list (the row layout's natural minimum). Below this the
-    // chapter list's row Row would overflow its fixed 8px title-to-start
-    // gap and Flutter's RenderFlex throws.
-    self.minSize = NSSize(width: 423, height: 300)
+    // Minimum window size: keep the chapter list's Add / Delete / Match
+    // Playhead OverflowBar on a single line. Below ~578px the
+    // OverflowBar wraps the buttons to a column, which looks crowded.
+    // This also comfortably exceeds the chapter row's natural minimum
+    // (cover panel 280 + divider 1 + ~142 row minimum = 423), so the
+    // earlier RenderFlex overflow at narrow widths is also prevented.
+    self.minSize = NSSize(width: 578, height: 300)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
