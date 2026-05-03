@@ -58,27 +58,31 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
 
 // MARK: - NSDraggingDestination
 //
-// NSWindow conforms to NSDraggingDestination at the Objective-C level
-// via NSResponder, but Swift doesn't expose these methods as
-// overridable on the class directly — they're provided by ObjC
-// categories. Declare them in an extension without `override`; the
-// Objective-C runtime picks up the implementations via the dragging
-// machinery once `registerForDraggedTypes(_:)` has been called on the
-// window.
+// NSWindow's NSDraggingDestination conformance is provided through
+// Objective-C categories that Swift's `override` machinery doesn't see,
+// so the methods can't use the `override` keyword. They must be marked
+// `@objc` so the Objective-C runtime dispatches the dragging machinery
+// to them — without `@objc`, methods declared in a Swift extension are
+// invisible to ObjC and AppKit silently skips them, which is why a
+// drag would have no visible effect.
 extension MainFlutterWindow {
+  @objc
   public func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
     dragDropChannel?.invokeMethod("dragEntered", arguments: nil)
     return .copy
   }
 
+  @objc
   public func draggingExited(_ sender: (any NSDraggingInfo)?) {
     dragDropChannel?.invokeMethod("dragExited", arguments: nil)
   }
 
+  @objc
   public func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
     return true
   }
 
+  @objc
   public func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
     let pasteboard = sender.draggingPasteboard
     let urls = pasteboard.readObjects(
