@@ -15,6 +15,8 @@ Items intentionally out of scope for the current cycle but worth doing later.
 ## Cross-platform desktop polish
 
 - [ ] **Set the window minimum size on Windows and Linux** to match macOS's 423×300. macOS uses `self.minSize` in `MainFlutterWindow.swift`; Windows uses `WM_GETMINMAXINFO` in `windows/runner/flutter_window.cpp`; Linux uses `gtk_widget_set_size_request` (or `gtk_window_set_geometry_hints`) in `linux/my_application.cc`.
+- [ ] **Implement drag-and-drop file open on Windows** — `windows/runner/flutter_window.cpp` registers an `IDropTarget` (or uses `DragAcceptFiles` + `WM_DROPFILES`) and posts `dragEntered` / `dragExited` / `filesDropped` over the existing `m4b_chapterizer/drag_drop` MethodChannel. Dart-side validation already lives in `lib/presentation/drag_drop/handle_files_dropped.dart`.
+- [ ] **Implement drag-and-drop file open on Linux** — `linux/my_application.cc` wires GTK `drag-data-received` / `drag-motion` / `drag-leave` and posts the same three events on the same channel.
 
 ## Other
 
