@@ -12,6 +12,13 @@ final selectedChapterProvider = StateProvider<int>((ref) => 0);
 final chapterTitleFocusNodesProvider =
     Provider<Map<int, FocusNode>>((ref) => <int, FocusNode>{});
 
+/// Increments each time `EditorNotifier.undo()` or `redo()` produces a chapter
+/// change. The chapter list listens to this counter and scrolls the selected
+/// chapter into view when it fires. Click and arrow-key selection do NOT
+/// increment this — those are deliberate user actions that don't need a
+/// scroll.
+final chapterScrollRequestProvider = StateProvider<int>((ref) => 0);
+
 class ChapterList extends ConsumerStatefulWidget {
   const ChapterList({super.key});
 
@@ -29,13 +36,25 @@ class _ChapterListState extends ConsumerState<ChapterList> {
     super.dispose();
   }
 
-  void _onSelectionChanged(int? prev, int next) {
+  void _ensureSelectedVisible() {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final target = (next * _kRowHeight)
-        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    final index = ref.read(selectedChapterProvider);
+    final chapterTop = index * _kRowHeight;
+    final chapterBottom = chapterTop + _kRowHeight;
+    final viewportTop = position.pixels;
+    final viewportBottom = viewportTop + position.viewportDimension;
+
+    double? target;
+    if (chapterTop < viewportTop) {
+      target = chapterTop;
+    } else if (chapterBottom > viewportBottom) {
+      target = chapterBottom - position.viewportDimension;
+    }
+    if (target == null) return; // already on screen — don't move
+
     _scrollController.animateTo(
-      target,
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOut,
     );
@@ -43,7 +62,9 @@ class _ChapterListState extends ConsumerState<ChapterList> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(selectedChapterProvider, _onSelectionChanged);
+    ref.listen<int>(chapterScrollRequestProvider, (_, _) {
+      _ensureSelectedVisible();
+    });
 
     final book = ref.watch(editorProvider).audiobook;
     final selected = ref.watch(selectedChapterProvider);

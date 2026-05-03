@@ -6,7 +6,8 @@ import '../../domain/bookbinder.dart';
 import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
 import '../../domain/models/cover.dart';
-import '../widgets/chapter_list.dart' show selectedChapterProvider;
+import '../widgets/chapter_list.dart'
+    show selectedChapterProvider, chapterScrollRequestProvider;
 import 'playback.dart';
 
 enum SetChapterStartError { duplicate, firstNotZero }
@@ -329,6 +330,8 @@ class EditorNotifier extends Notifier<EditorState> {
             ? newAudiobook.chapters.length - 1
             : diff;
         ref.read(selectedChapterProvider.notifier).state = clamped;
+        // Ask the chapter list to scroll the changed row into view.
+        ref.read(chapterScrollRequestProvider.notifier).state++;
       }
     }
   }
@@ -353,6 +356,7 @@ class EditorNotifier extends Notifier<EditorState> {
             ? newAudiobook.chapters.length - 1
             : diff;
         ref.read(selectedChapterProvider.notifier).state = clamped;
+        ref.read(chapterScrollRequestProvider.notifier).state++;
       }
     }
   }

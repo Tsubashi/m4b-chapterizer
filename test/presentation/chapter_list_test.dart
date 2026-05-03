@@ -343,9 +343,8 @@ void main() {
     );
   });
 
-  testWidgets('ChapterList scrolls to the selected chapter on selection change',
+  testWidgets('selection change alone does NOT auto-scroll the list',
       (tester) async {
-    // 12 chapters, 200px tall surface — chapter 8 is well below the fold.
     addTearDown(() => tester.view.resetPhysicalSize());
     tester.view.physicalSize = const Size(400, 200);
     tester.view.devicePixelRatio = 1.0;
@@ -375,20 +374,16 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    // Locate the ListView's scrollable. TextFields render their own
-    // Scrollables inside the rows, so we take the outermost one.
     final scrollable = find
         .descendant(
           of: find.byType(ListView),
           matching: find.byType(Scrollable),
         )
         .first;
-    final initialOffset = tester.widget<Scrollable>(scrollable)
-        .controller!
-        .position
-        .pixels;
-    expect(initialOffset, 0);
 
+    // Bumping selectedChapterProvider directly (the path that click and arrow
+    // navigation take) must NOT scroll. Only chapterScrollRequestProvider
+    // does that.
     container.read(selectedChapterProvider.notifier).state = 8;
     await tester.pumpAndSettle();
 
@@ -396,7 +391,111 @@ void main() {
         .controller!
         .position
         .pixels;
-    expect(afterOffset, greaterThan(200),
-        reason: 'list should scroll past the initial viewport to row 8');
+    expect(afterOffset, 0,
+        reason: 'plain selection change should not move the scroll position');
+  });
+
+  testWidgets(
+      'chapterScrollRequestProvider scrolls the selected chapter into view',
+      (tester) async {
+    addTearDown(() => tester.view.resetPhysicalSize());
+    tester.view.physicalSize = const Size(400, 200);
+    tester.view.devicePixelRatio = 1.0;
+
+    final book = Audiobook.validated(
+      chapters: List.generate(
+        12,
+        (i) => Chapter(
+          title: 'Ch $i',
+          start: Duration(seconds: i * 5),
+        ),
+      ),
+      totalDuration: const Duration(seconds: 200),
+    );
+    final fake = _StubBookbinder(book);
+    final playback = _RecordingPlayback();
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(playback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: ChapterList())),
+    ));
+    await tester.pumpAndSettle();
+
+    final scrollable = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    // Set selection to row 8 (off-screen), then bump the request counter —
+    // the listener should scroll just enough to bring row 8 into view.
+    container.read(selectedChapterProvider.notifier).state = 8;
+    container.read(chapterScrollRequestProvider.notifier).state++;
+    await tester.pumpAndSettle();
+
+    final afterOffset = tester.widget<Scrollable>(scrollable)
+        .controller!
+        .position
+        .pixels;
+    expect(afterOffset, greaterThan(0),
+        reason: 'request counter must trigger a scroll past the fold');
+  });
+
+  testWidgets(
+      'an already-visible selected chapter is not scrolled when the request fires',
+      (tester) async {
+    addTearDown(() => tester.view.resetPhysicalSize());
+    tester.view.physicalSize = const Size(400, 600);
+    tester.view.devicePixelRatio = 1.0;
+
+    final book = Audiobook.validated(
+      chapters: List.generate(
+        4,
+        (i) => Chapter(
+          title: 'Ch $i',
+          start: Duration(seconds: i * 5),
+        ),
+      ),
+      totalDuration: const Duration(seconds: 60),
+    );
+    final fake = _StubBookbinder(book);
+    final playback = _RecordingPlayback();
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(playback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: ChapterList())),
+    ));
+    await tester.pumpAndSettle();
+
+    final scrollable = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    container.read(selectedChapterProvider.notifier).state = 2;
+    container.read(chapterScrollRequestProvider.notifier).state++;
+    await tester.pumpAndSettle();
+
+    final afterOffset = tester.widget<Scrollable>(scrollable)
+        .controller!
+        .position
+        .pixels;
+    expect(afterOffset, 0,
+        reason: 'visible row should not trigger any movement');
   });
 }
