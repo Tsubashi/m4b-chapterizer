@@ -165,7 +165,7 @@ The dialog UI is **the same widget** as the exit-confirmation dialog. We extract
 
 ### Editor wiring — `lib/presentation/screens/editor_screen.dart`
 
-Wrap `Scaffold.body` (the existing conditional `Center` / `Column`) in `DragDropOverlay(child: ...)`. AppBar stays outside the overlay so dragging onto the title bar doesn't show the drop UI (matches macOS convention for window-chrome regions).
+Wrap `Scaffold.body` (the existing conditional `Center` / `Column`) in `DragDropOverlay(child: ...)`. The Flutter overlay paints over the body only, but the macOS native side registers `registerForDraggedTypes` on the entire `NSWindow`, so AppKit accepts drops over the title bar too. The overlay's tinted background paints *behind* the title bar in that region, which is a minor cosmetic limitation but doesn't impede functionality.
 
 ### Open… button — `lib/presentation/keyboard/editor_actions.dart`
 
@@ -253,5 +253,5 @@ After merge, on macOS:
 6. Drag a `.txt` → overlay → drop → SnackBar; nothing opens.
 7. Drag two `.m4b`s → overlay → drop → SnackBar; nothing opens.
 8. Drag a `.m4b` over the window then drag back out without dropping → overlay dismisses; nothing else changes.
-9. AppBar title region: drag a `.m4b` over the title bar → no overlay (drop region is body only).
+9. AppBar title region: drag a `.m4b` over the title bar → overlay appears and drop is accepted (drop region is the entire native window). The overlay's tinted background paints behind the title bar; that's expected.
 10. Open… button still works and shows the same three-choice dialog when dirty.
