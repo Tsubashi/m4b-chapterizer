@@ -156,18 +156,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('lays out without overflow when chapter list panel is tiny',
-      (tester) async {
-    // Reproduces the production crash: window resized so far that the
-    // chapter list panel ends up extremely narrow. Without the LayoutBuilder
-    // guard in `_ChapterRowState.build`, the title Row's fixed SizedBox(8)
-    // overflows by ~1px and Flutter's RenderFlex throws.
-    addTearDown(() => tester.view.resetPhysicalSize());
-    tester.view.physicalSize = const Size(60, 400);
-    tester.view.devicePixelRatio = 1.0;
-    await _setUp(tester);
-    expect(tester.takeException(), isNull);
-  });
 
   testWidgets('typing into a chapter title preserves cursor at end',
       (tester) async {

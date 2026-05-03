@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
-import '../../domain/models/audiobook.dart';
 import '../../domain/models/chapter.dart';
 import '../providers/editor_state.dart'
-    show EditorNotifier, SetChapterStartError, editorProvider;
+    show SetChapterStartError, editorProvider;
 import '../providers/playback.dart';
 import '../util/duration_format.dart';
 
@@ -72,25 +71,6 @@ class _ChapterListState extends ConsumerState<ChapterList> {
     final selected = ref.watch(selectedChapterProvider);
     final notifier = ref.read(editorProvider.notifier);
     if (book == null) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // The fixed-width cover/metadata panel can starve the chapter list
-        // of all horizontal room when the window is small. Below this
-        // threshold the inner ListTile/Row layouts can't fit even their
-        // minimum chrome — collapse to nothing rather than throw.
-        if (constraints.maxWidth < 80) {
-          return const SizedBox.shrink();
-        }
-        return _buildList(book, selected, notifier);
-      },
-    );
-  }
-
-  Widget _buildList(
-    Audiobook book,
-    int selected,
-    EditorNotifier notifier,
-  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -265,68 +245,54 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
           ),
         ),
       ),
-      title: LayoutBuilder(
-        builder: (context, constraints) {
-          final titleField = TextField(
-            key: ValueKey('chapters.title.${widget.index}'),
-            focusNode: _titleFocusNode,
-            controller: _titleController,
-            onTap: widget.onTap,
-            onChanged: widget.onTitleChanged,
-            decoration: const InputDecoration(isDense: true),
-          );
-
-          // 110px (start field max) + 8px (gap) + 24px (title minimum to be
-          // useful). Below this, drop the start field rather than overflow
-          // the row by the fixed SizedBox width.
-          const minWidthForStartField = 142.0;
-          if (constraints.maxWidth < minWidthForStartField) {
-            return titleField;
-          }
-
-          return Row(
-            children: [
-              Expanded(child: titleField),
-              const SizedBox(width: 8),
-              Flexible(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 110),
-                  child: TextField(
-                    key: ValueKey('chapters.start.${widget.index}'),
-                    focusNode: _startFocusNode,
-                    controller: _startController,
-                    onTap: widget.onTap,
-                    decoration: const InputDecoration(isDense: true),
-                    onSubmitted: (v) {
-                      Duration parsed;
-                      try {
-                        parsed = parseDuration(v);
-                      } on FormatException {
-                        _startController.text =
-                            formatDuration(widget.chapter.start);
-                        return;
-                      }
-                      final error = widget.onStartChanged(parsed);
-                      if (error != null) {
-                        _startController.text =
-                            formatDuration(widget.chapter.start);
-                        final messenger = ScaffoldMessenger.of(context);
-                        messenger.showSnackBar(SnackBar(
-                          content: Text(switch (error) {
-                            SetChapterStartError.duplicate =>
-                                'Chapter start times must be unique',
-                            SetChapterStartError.firstNotZero =>
-                                'First chapter must start at 00:00:00.000',
-                          }),
-                        ));
-                      }
-                    },
-                  ),
-                ),
+      title: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              key: ValueKey('chapters.title.${widget.index}'),
+              focusNode: _titleFocusNode,
+              controller: _titleController,
+              onTap: widget.onTap,
+              onChanged: widget.onTitleChanged,
+              decoration: const InputDecoration(isDense: true),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 110),
+              child: TextField(
+                key: ValueKey('chapters.start.${widget.index}'),
+                focusNode: _startFocusNode,
+                controller: _startController,
+                onTap: widget.onTap,
+                decoration: const InputDecoration(isDense: true),
+                onSubmitted: (v) {
+                  Duration parsed;
+                  try {
+                    parsed = parseDuration(v);
+                  } on FormatException {
+                    _startController.text = formatDuration(widget.chapter.start);
+                    return;
+                  }
+                  final error = widget.onStartChanged(parsed);
+                  if (error != null) {
+                    _startController.text = formatDuration(widget.chapter.start);
+                    final messenger = ScaffoldMessenger.of(context);
+                    messenger.showSnackBar(SnackBar(
+                      content: Text(switch (error) {
+                        SetChapterStartError.duplicate =>
+                            'Chapter start times must be unique',
+                        SetChapterStartError.firstNotZero =>
+                            'First chapter must start at 00:00:00.000',
+                      }),
+                    ));
+                  }
+                },
               ),
-            ],
-          );
-        },
+            ),
+          ),
+        ],
       ),
     );
   }

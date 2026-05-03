@@ -14,6 +14,13 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     // leaving the app running with no visible window.
     self.delegate = self
 
+    // Minimum window size: enough room for the fixed-width 280px
+    // cover/metadata panel plus the 1px divider plus 142px for the
+    // chapter list (the row layout's natural minimum). Below this the
+    // chapter list's row Row would overflow its fixed 8px title-to-start
+    // gap and Flutter's RenderFlex throws.
+    self.minSize = NSSize(width: 423, height: 300)
+
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
