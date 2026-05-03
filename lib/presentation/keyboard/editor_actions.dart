@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../drag_drop/dirty_check.dart';
 import '../providers/editor_state.dart';
 import '../util/file_picker_errors.dart';
 
@@ -16,34 +17,12 @@ class EditorActions {
   final WidgetRef ref;
 
   // coverage:ignore-start
-  // The discard-confirmation dialog and the FilePicker open/saveAs flows
-  // can't be simulated cleanly in a `flutter test` widget environment —
-  // FilePicker is a platform plugin and the dialog flows are exercised
-  // by interactive smoke tests. `save()` below stays measured because it
-  // uses neither.
-  Future<bool> _confirmDiscard() async {
-    final answer = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Discard unsaved changes?'),
-        content:
-            const Text('You have unsaved changes. Continue and lose them?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Discard')),
-        ],
-      ),
-    );
-    return answer ?? false;
-  }
-
+  // FilePicker is a platform plugin and can't be simulated cleanly in a
+  // `flutter test` widget environment. The dirty-check is in
+  // confirmReplaceCurrentBook (covered by dirty_check_test.dart);
+  // open() itself is exercised only by interactive smoke tests.
   Future<void> open() async {
-    final state = ref.read(editorProvider);
-    if (state.isDirty && !await _confirmDiscard()) return;
+    if (!await confirmReplaceCurrentBook(context, ref)) return;
     if (!context.mounted) return;
     final result = await guardFilePicker(
       context,
