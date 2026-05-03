@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'data/bundled_binary_resolver.dart';
 import 'data/ffmpeg_bookbinder.dart';
 import 'data/process_runner.dart';
 import 'presentation/app.dart';
+import 'presentation/exit_confirmation.dart';
 import 'presentation/providers/editor_state.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized();
+  await windowManager.setPreventClose(true);
+
   final resolver = BundledBinaryResolver();
   runApp(
     ProviderScope(
@@ -20,7 +26,7 @@ void main() {
           ),
         ),
       ],
-      child: const M4bChapterizerApp(),
+      child: const WindowCloseGuard(child: M4bChapterizerApp()),
     ),
   );
 }
