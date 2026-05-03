@@ -111,10 +111,10 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
           _field('Genre', const ValueKey('metadata.genre'), _genre,
               _genreFocus, notifier.setGenre),
           _field('Year', const ValueKey('metadata.year'), _year, _yearFocus,
-              (s) => notifier.setYear(int.tryParse(s))),
+              (s) => notifier.setYear(int.tryParse(s)),
+              maxLines: 1),
           _field('Description', const ValueKey('metadata.description'),
-              _description, _descriptionFocus, notifier.setDescription,
-              maxLines: 3),
+              _description, _descriptionFocus, notifier.setDescription),
         ],
       ),
     );
@@ -126,7 +126,7 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
     TextEditingController controller,
     FocusNode focusNode,
     void Function(String) onChanged, {
-    int maxLines = 1,
+    int? maxLines,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -135,6 +135,8 @@ class _MetadataFormState extends ConsumerState<MetadataForm> {
         focusNode: focusNode,
         controller: controller,
         maxLines: maxLines,
+        keyboardType:
+            maxLines == 1 ? TextInputType.text : TextInputType.multiline,
         decoration: InputDecoration(labelText: label, isDense: true),
         onChanged: onChanged,
       ),
