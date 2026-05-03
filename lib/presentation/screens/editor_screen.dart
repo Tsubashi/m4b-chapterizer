@@ -41,26 +41,11 @@ class EditorScreen extends ConsumerWidget {
         actions: [
           TextButton(
             // coverage:ignore-start
-            // The Open / Save As buttons launch FilePicker via
-            // EditorActions; the underlying methods are coverage-ignored
-            // for the same reason. Save (without a picker) stays measured.
+            // The Open button launches FilePicker via EditorActions; the
+            // underlying method is coverage-ignored for the same reason.
             onPressed: () => EditorActions(context, ref).open(),
             // coverage:ignore-end
             child: const Text('Open…'),
-          ),
-          TextButton(
-            onPressed: state.audiobook == null
-                ? null
-                : () => EditorActions(context, ref).save(),
-            child: const Text('Save'),
-          ),
-          TextButton(
-            // coverage:ignore-start
-            onPressed: state.audiobook == null
-                ? null
-                : () => EditorActions(context, ref).saveAs(),
-            // coverage:ignore-end
-            child: const Text('Save As…'),
           ),
         ],
       ),

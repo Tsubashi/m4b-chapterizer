@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../keyboard/editor_actions.dart';
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../providers/waveform.dart';
@@ -67,6 +68,37 @@ class PlaybackControls extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton(
+                    key: const ValueKey('playback.save'),
+                    onPressed: book == null
+                        ? null
+                        : () => EditorActions(context, ref).save(),
+                    child: const Text('Save'),
+                  ),
+                  MenuAnchor(
+                    builder: (context, menuController, _) => IconButton(
+                      key: const ValueKey('playback.save.menu'),
+                      icon: const Icon(Icons.arrow_drop_down),
+                      onPressed: book == null
+                          ? null
+                          : () => menuController.isOpen
+                              ? menuController.close()
+                              : menuController.open(),
+                    ),
+                    menuChildren: [
+                      MenuItemButton(
+                        key: const ValueKey('playback.saveAs'),
+                        onPressed: () =>
+                            EditorActions(context, ref).saveAs(),
+                        child: const Text('Save As…'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ],
           ),
         ],
