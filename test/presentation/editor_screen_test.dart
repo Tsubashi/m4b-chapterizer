@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
+import 'package:m4b_chapterizer/presentation/drag_drop/drag_drop_channel.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/screens/editor_screen.dart';
@@ -65,11 +66,17 @@ class _RecordingPlayback implements PlaybackController {
   Future<void> dispose() async {}
 }
 
+class _StubChannel implements DragDropChannel {
+  @override
+  Stream<DragEvent> get events => const Stream.empty();
+}
+
 void main() {
   testWidgets('shows the dirty marker after editing', (tester) async {
     final container = ProviderContainer(overrides: [
       bookbinderProvider.overrideWithValue(_Stub()),
       playbackControllerProvider.overrideWithValue(_NoopPlayback()),
+      dragDropChannelProvider.overrideWithValue(_StubChannel()),
     ]);
     await container.read(editorProvider.notifier).open('/tmp/x.m4b');
     await tester.pumpWidget(UncontrolledProviderScope(
@@ -91,6 +98,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       bookbinderProvider.overrideWithValue(_Stub()),
       playbackControllerProvider.overrideWithValue(playback),
+      dragDropChannelProvider.overrideWithValue(_StubChannel()),
     ]);
     await tester.pumpWidget(UncontrolledProviderScope(
       container: container,

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:m4b_chapterizer/domain/bookbinder.dart';
 import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
+import 'package:m4b_chapterizer/presentation/drag_drop/drag_drop_channel.dart';
 import 'package:m4b_chapterizer/presentation/keyboard/shortcuts.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
@@ -128,6 +129,11 @@ class _StubBookbinder implements Bookbinder {
   }
 }
 
+class _StubChannel implements DragDropChannel {
+  @override
+  Stream<DragEvent> get events => const Stream.empty();
+}
+
 class _FakePlayback implements PlaybackController {
   final positionController = StreamController<Duration>.broadcast();
   final playingController = StreamController<bool>.broadcast();
@@ -178,6 +184,7 @@ Future<({ProviderContainer container, _FakePlayback playback, _StubBookbinder bo
   final container = ProviderContainer(overrides: [
     bookbinderProvider.overrideWithValue(bookbinder),
     playbackControllerProvider.overrideWithValue(playback),
+    dragDropChannelProvider.overrideWithValue(_StubChannel()),
   ]);
   await container.read(editorProvider.notifier).open('/tmp/x.m4b');
   await tester.pumpWidget(UncontrolledProviderScope(

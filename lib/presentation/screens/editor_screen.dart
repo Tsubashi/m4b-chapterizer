@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../drag_drop/drag_drop_overlay.dart';
 import '../keyboard/editor_actions.dart';
 import '../keyboard/shortcuts.dart';
 import '../providers/editor_state.dart';
@@ -55,33 +56,35 @@ class EditorScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: state.audiobook == null
-          ? const Center(child: Text('Open an .m4b file to begin'))
-          : const Column(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 280,
-                        child: SingleChildScrollView(
-                          child: Column(
-                            children: [
-                              CoverPanel(),
-                              MetadataForm(),
-                            ],
+      body: DragDropOverlay(
+        child: state.audiobook == null
+            ? const Center(child: Text('Open an .m4b file to begin'))
+            : const Column(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 280,
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                CoverPanel(),
+                                MetadataForm(),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      VerticalDivider(width: 1),
-                      Expanded(child: ChapterList()),
-                    ],
+                        VerticalDivider(width: 1),
+                        Expanded(child: ChapterList()),
+                      ],
+                    ),
                   ),
-                ),
-                Divider(height: 1),
-                PlaybackControls(),
-              ],
-            ),
+                  Divider(height: 1),
+                  PlaybackControls(),
+                ],
+              ),
+      ),
     ),
     );
   }
