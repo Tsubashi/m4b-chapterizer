@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'exit_confirmation.dart';
 import 'screens/editor_screen.dart';
 
 class M4bChapterizerApp extends ConsumerWidget {
@@ -11,7 +12,9 @@ class M4bChapterizerApp extends ConsumerWidget {
     return MaterialApp(
       title: 'm4b chapterizer',
       theme: ThemeData(useMaterial3: true),
-      home: const EditorScreen(),
+      // WindowCloseGuard must live INSIDE MaterialApp so that its context
+      // can find the Navigator when showing the unsaved-changes dialog.
+      home: const WindowCloseGuard(child: EditorScreen()),
     );
   }
 }

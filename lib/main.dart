@@ -5,7 +5,6 @@ import 'data/bundled_binary_resolver.dart';
 import 'data/ffmpeg_bookbinder.dart';
 import 'data/process_runner.dart';
 import 'presentation/app.dart';
-import 'presentation/exit_confirmation.dart';
 import 'presentation/providers/editor_state.dart';
 
 void main() {
@@ -21,7 +20,7 @@ void main() {
           ),
         ),
       ],
-      child: const WindowCloseGuard(child: M4bChapterizerApp()),
+      child: const M4bChapterizerApp(),
     ),
   );
 }
