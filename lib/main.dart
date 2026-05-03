@@ -9,6 +9,11 @@ import 'presentation/drag_drop/drag_drop_channel.dart';
 import 'presentation/providers/editor_state.dart';
 
 void main() {
+  // MethodChannelDragDropChannel calls MethodChannel.setMethodCallHandler
+  // in its constructor, which requires the binary messenger to be ready.
+  // ensureInitialized() also has to run before runApp on flutter desktop
+  // for plugins that touch the binding from main isolate.
+  WidgetsFlutterBinding.ensureInitialized();
   final resolver = BundledBinaryResolver();
   runApp(
     ProviderScope(
