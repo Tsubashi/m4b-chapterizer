@@ -3,43 +3,18 @@ import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dialogs/unsaved_changes_dialog.dart';
 import 'providers/editor_state.dart';
 
-enum ExitDecision { cancel, discard, save }
-
-/// Shows the unsaved-changes confirm dialog. Returns the user's pick,
-/// or null if the dialog cannot be shown.
-Future<ExitDecision?> showExitConfirmDialog(BuildContext context) {
-  return showDialog<ExitDecision>(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Unsaved changes'),
-      content: const Text(
-        'Do you want to save your changes before exiting?',
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(ExitDecision.cancel),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(ExitDecision.discard),
-          child: const Text('Discard'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(ctx).pop(ExitDecision.save),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-}
+// Re-export so existing imports of `ExitDecision` keep working until
+// callers migrate. The exit flow only uses cancel/discard/save, which
+// map 1:1 to UnsavedChangesDecision.
+typedef ExitDecision = UnsavedChangesDecision;
 
 /// True if the application should proceed with closing.
 ///
 /// Fast path: if the editor isn't dirty, returns true without showing a
-/// dialog. Otherwise shows [showExitConfirmDialog] and:
+/// dialog. Otherwise shows [showUnsavedChangesDialog] and:
 /// - Cancel / dismissed → false
 /// - Discard → true
 /// - Save → awaits the editor's save, then true
@@ -47,14 +22,14 @@ Future<bool> handleExitRequest(BuildContext context, WidgetRef ref) async {
   final state = ref.read(editorProvider);
   if (!state.isDirty) return true;
 
-  final decision = await showExitConfirmDialog(context);
+  final decision = await showUnsavedChangesDialog(context);
   switch (decision) {
-    case ExitDecision.discard:
+    case UnsavedChangesDecision.discard:
       return true;
-    case ExitDecision.save:
+    case UnsavedChangesDecision.save:
       await ref.read(editorProvider.notifier).save();
       return true;
-    case ExitDecision.cancel:
+    case UnsavedChangesDecision.cancel:
     case null:
       return false;
   }
