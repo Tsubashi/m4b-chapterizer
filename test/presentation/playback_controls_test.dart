@@ -9,7 +9,6 @@ import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/providers/waveform.dart';
-import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
 import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
 
@@ -71,34 +70,6 @@ class _FakePlayback implements PlaybackController {
 }
 
 void main() {
-  testWidgets('Set start to playhead snaps the selected chapter to position',
-      (tester) async {
-    final fake = _StubBookbinder();
-    final fakePlayback = _FakePlayback();
-    final container = ProviderContainer(
-      overrides: [
-        bookbinderProvider.overrideWithValue(fake),
-        playbackControllerProvider.overrideWithValue(fakePlayback),
-      ],
-    );
-    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
-    container.read(selectedChapterProvider.notifier).state = 1;
-
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
-    ));
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('playback.snap')));
-    await tester.pump();
-
-    expect(
-      container.read(editorProvider).audiobook?.chapters[1].start,
-      const Duration(seconds: 7),
-    );
-  });
-
   testWidgets('tapping the play/pause button toggles via the controller',
       (tester) async {
     final fake = _StubBookbinder();

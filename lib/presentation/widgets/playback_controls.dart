@@ -5,7 +5,6 @@ import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../providers/waveform.dart';
 import '../util/duration_format.dart';
-import 'chapter_list.dart';
 import 'chapter_scrubber.dart';
 
 class PlaybackControls extends ConsumerWidget {
@@ -15,8 +14,6 @@ class PlaybackControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(playbackControllerProvider);
     final state = ref.watch(editorProvider);
-    final notifier = ref.read(editorProvider.notifier);
-    final selectedIndex = ref.watch(selectedChapterProvider);
     final book = state.audiobook;
 
     final peaksAsync = state.path == null
@@ -70,12 +67,6 @@ class PlaybackControls extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              ElevatedButton(
-                key: const ValueKey('playback.snap'),
-                onPressed: () => notifier.setChapterStart(
-                    selectedIndex, controller.position),
-                child: const Text('Set start to playhead'),
-              ),
             ],
           ),
         ],

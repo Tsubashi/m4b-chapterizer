@@ -19,6 +19,7 @@ class _StubBookbinder implements Bookbinder {
 
 class _RecordingPlayback implements PlaybackController {
   final List<Duration> seeks = [];
+  Duration _position = Duration.zero;
   @override
   Future<void> setSource(String path) async {}
   @override
@@ -30,7 +31,8 @@ class _RecordingPlayback implements PlaybackController {
     seeks.add(position);
   }
   @override
-  Duration get position => Duration.zero;
+  Duration get position => _position;
+  set position(Duration value) => _position = value;
   @override
   bool get playing => false;
   @override
@@ -105,6 +107,22 @@ void main() {
         Colors.transparent);
     expect((numberContainer(1).decoration as BoxDecoration).color,
         isNot(Colors.transparent));
+  });
+
+  testWidgets('Match Playhead snaps the selected chapter to position',
+      (tester) async {
+    final (:container, :playback) = await _setUp(tester);
+    container.read(selectedChapterProvider.notifier).state = 1;
+    playback.position = const Duration(seconds: 7);
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('chapters.snap')));
+    await tester.pump();
+
+    expect(
+      container.read(editorProvider).audiobook?.chapters[1].start,
+      const Duration(seconds: 7),
+    );
   });
 
   testWidgets('Delete button removes the selected chapter', (tester) async {

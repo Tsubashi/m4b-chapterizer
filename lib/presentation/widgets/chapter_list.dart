@@ -90,6 +90,18 @@ class _ChapterListState extends ConsumerState<ChapterList> {
                   ref.read(selectedChapterProvider)),
               child: const Text('− Delete'),
             ),
+            TextButton(
+              key: const ValueKey('chapters.snap'),
+              onPressed: () {
+                final book = ref.read(editorProvider).audiobook;
+                if (book == null) return;
+                final idx = ref.read(selectedChapterProvider);
+                final pos =
+                    ref.read(playbackControllerProvider).position;
+                ref.read(editorProvider.notifier).setChapterStart(idx, pos);
+              },
+              child: const Text('Match Playhead'),
+            ),
           ],
         ),
       ],
