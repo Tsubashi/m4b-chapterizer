@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
 
+# Required by softprops/action-gh-release to create / update a GitHub
+# Release on tag pushes. No effect on push or pull_request runs that
+# don't fire the release steps.
+permissions:
+  contents: write
+
 jobs:
   build-and-test:
     strategy:
@@ -14,6 +20,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Decide once whether this run is a "release run". A release run
+      # is a tag push whose tag name is a strict SemVer 2.0 string
+      # (X.Y.Z, X.Y.Z-pre.1, X.Y.Z+meta, etc.). Anything else — branch
+      # pushes, PRs, non-SemVer tags — produces a debug build with no
+      # artifact upload.
+      - name: Detect release tag
+        id: release
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # Canonical SemVer 2.0 regex from https://semver.org/.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?(\+([0-9a-zA-Z-]+(\.[0-9a-zA-Z-]+)*))?$'
+          if [[ "${GITHUB_REF}" == refs/tags/* ]] && [[ "$tag" =~ $semver ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+            echo "Release run for tag $tag"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            echo "Not a release run (ref=$GITHUB_REF)"
+          fi
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -67,9 +93,7 @@ jobs:
       - name: Coverage summary
         run: dart run tool/coverage_summary.dart
 
-      # Release builds on tag pushes (vX.Y…); debug builds otherwise.
-      # Release artifacts are zipped and uploaded as workflow artifacts;
-      # see the package + upload steps below.
+      # Release builds on SemVer tag pushes; debug builds otherwise.
       - name: Build (macOS)
         if: runner.os == 'macOS'
         # Disable code signing — we don't have a Developer ID on CI; the
@@ -78,7 +102,7 @@ jobs:
         # warning. Add a Developer ID + signing setup later for a
         # one-click experience.
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${{ steps.release.outputs.is_release }}" == "true" ]]; then
             flutter build macos --release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
           else
             flutter build macos --debug
@@ -88,7 +112,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y ninja-build libgtk-3-dev
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${{ steps.release.outputs.is_release }}" == "true" ]]; then
             flutter build linux --release
           else
             flutter build linux --debug
@@ -98,7 +122,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+          if ('${{ steps.release.outputs.is_release }}' -eq 'true') {
             flutter build windows --release
           } else {
             flutter build windows --debug
@@ -106,37 +130,35 @@ jobs:
 
       # ---- Tag-triggered release artifacts ----
       #
-      # When a tag matching v* is pushed, zip the per-platform release
-      # output and upload it as a GitHub Actions workflow artifact.
-      # Artifacts are named with the tag (e.g. m4b-chapterizer-v1.0-macos.zip)
-      # and retained per the repo's default artifact retention (90 days).
-      # For long-term distribution, attach these to a GitHub Release in
-      # a follow-up.
+      # When a SemVer tag is pushed, zip the per-platform release output
+      # and attach it to (or upsert) a GitHub Release with that tag.
+      # softprops/action-gh-release@v2 handles the create-or-update
+      # idempotently across the three matrix runners — all three end up
+      # attached to the same Release.
 
-      - name: Package macOS app (tag only)
-        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+      - name: Package macOS app (release only)
+        if: steps.release.outputs.is_release == 'true' && runner.os == 'macOS'
         run: |
           cd build/macos/Build/Products/Release
           ditto -c -k --sequesterRsrc --keepParent m4b_chapterizer.app \
             "$GITHUB_WORKSPACE/m4b-chapterizer-${GITHUB_REF_NAME}-macos.zip"
 
-      - name: Package Linux app (tag only)
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+      - name: Package Linux app (release only)
+        if: steps.release.outputs.is_release == 'true' && runner.os == 'Linux'
         run: |
           cd build/linux/x64/release
           zip -r "$GITHUB_WORKSPACE/m4b-chapterizer-${GITHUB_REF_NAME}-linux.zip" bundle
 
-      - name: Package Windows app (tag only)
-        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+      - name: Package Windows app (release only)
+        if: steps.release.outputs.is_release == 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $dest = "$env:GITHUB_WORKSPACE\m4b-chapterizer-$env:GITHUB_REF_NAME-windows.zip"
           Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $dest
 
-      - name: Upload release artifact (tag only)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
+      - name: Attach to GitHub Release (release only)
+        if: steps.release.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
         with:
-          name: m4b-chapterizer-${{ github.ref_name }}-${{ runner.os == 'macOS' && 'macos' || (runner.os == 'Linux' && 'linux' || 'windows') }}
-          path: m4b-chapterizer-${{ github.ref_name }}-*.zip
-          if-no-files-found: error
+          files: m4b-chapterizer-${{ github.ref_name }}-*.zip
+          fail_on_unmatched_files: true
