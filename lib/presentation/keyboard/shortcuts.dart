@@ -9,6 +9,8 @@ import '../providers/playback.dart';
 import '../widgets/chapter_list.dart'
     show
         chapterScrollRequestProvider,
+        chapterStartCommitProvider,
+        chapterStartFocusNodesProvider,
         chapterTitleFocusNodesProvider,
         selectedChapterProvider;
 import 'editor_actions.dart';
@@ -67,6 +69,11 @@ class RedoIntent extends Intent {
   const RedoIntent();
 }
 
+class ChapterFieldTabIntent extends Intent {
+  const ChapterFieldTabIntent(this.delta);
+  final int delta; // +1 for Tab, -1 for Shift+Tab
+}
+
 /// Returns the editor's full keyboard shortcut map, with platform-correct
 /// modifiers (`⌘` on macOS, `Ctrl` elsewhere).
 Map<ShortcutActivator, Intent> editorShortcuts() {
@@ -105,6 +112,10 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
     cmd(LogicalKeyboardKey.keyB): const SetChapterToPlayheadIntent(),
     cmd(LogicalKeyboardKey.keyZ): const UndoIntent(),
     cmd(LogicalKeyboardKey.keyZ, shift: true): const RedoIntent(),
+    const SingleActivator(LogicalKeyboardKey.tab):
+        const ChapterFieldTabIntent(1),
+    const SingleActivator(LogicalKeyboardKey.tab, shift: true):
+        const ChapterFieldTabIntent(-1),
   };
 }
 
@@ -115,6 +126,32 @@ bool _isEditableTextFocused() {
   final focused = FocusManager.instance.primaryFocus;
   return focused?.context?.findAncestorWidgetOfExactType<EditableText>() !=
       null;
+}
+
+enum _ChapterFieldType { title, start }
+
+class _FocusedChapterField {
+  const _FocusedChapterField(this.index, this.type);
+  final int index;
+  final _ChapterFieldType type;
+}
+
+_FocusedChapterField? _focusedChapterField(WidgetRef ref) {
+  final focused = FocusManager.instance.primaryFocus;
+  if (focused == null) return null;
+  final titles = ref.read(chapterTitleFocusNodesProvider);
+  for (final entry in titles.entries) {
+    if (entry.value == focused) {
+      return _FocusedChapterField(entry.key, _ChapterFieldType.title);
+    }
+  }
+  final starts = ref.read(chapterStartFocusNodesProvider);
+  for (final entry in starts.entries) {
+    if (entry.value == focused) {
+      return _FocusedChapterField(entry.key, _ChapterFieldType.start);
+    }
+  }
+  return null;
 }
 
 /// A [CallbackAction] that disables itself (returning [KeyEventResult.ignored]
@@ -134,6 +171,30 @@ class _BareKeyAction<T extends Intent> extends Action<T> {
 
   @override
   Object? invoke(T intent) => _onInvoke(intent);
+}
+
+/// An action that runs only when focus is on a chapter title or start
+/// field. When the action is disabled, Flutter's default focus
+/// traversal handles the key press normally.
+class _ChapterFieldAction<T extends Intent> extends Action<T> {
+  _ChapterFieldAction(this._ref, this._onInvoke);
+
+  final WidgetRef _ref;
+  final Object? Function(T intent, _FocusedChapterField field) _onInvoke;
+
+  @override
+  bool isEnabled(T intent, [BuildContext? context]) =>
+      _focusedChapterField(_ref) != null;
+
+  @override
+  bool consumesKey(T intent) => _focusedChapterField(_ref) != null;
+
+  @override
+  Object? invoke(T intent) {
+    final field = _focusedChapterField(_ref);
+    if (field == null) return null;
+    return _onInvoke(intent, field);
+  }
 }
 
 class EditorShortcuts extends ConsumerStatefulWidget {
@@ -292,6 +353,68 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
           RedoIntent: CallbackAction<RedoIntent>(onInvoke: (_) {
             if (_isEditableTextFocused()) return null;
             ref.read(editorProvider.notifier).redo();
+            return null;
+          }),
+          ChapterFieldTabIntent: _ChapterFieldAction<ChapterFieldTabIntent>(
+              ref, (intent, field) {
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null) return null;
+            final n = book.chapters.length;
+            if (n == 0) return null;
+
+            // Compute next (chapterIdx, fieldType).
+            late int nextIdx;
+            late _ChapterFieldType nextType;
+            if (intent.delta > 0) {
+              if (field.type == _ChapterFieldType.title) {
+                nextIdx = field.index;
+                nextType = _ChapterFieldType.start;
+              } else {
+                nextIdx = (field.index + 1) % n;
+                nextType = _ChapterFieldType.title;
+              }
+            } else {
+              if (field.type == _ChapterFieldType.start) {
+                nextIdx = field.index;
+                nextType = _ChapterFieldType.title;
+              } else {
+                nextIdx = (field.index - 1 + n) % n;
+                nextType = _ChapterFieldType.start;
+              }
+            }
+
+            // Capture the target chapter reference from the pre-commit list.
+            final targetChapter = book.chapters[nextIdx];
+
+            // Commit any pending start-field edit.
+            if (field.type == _ChapterFieldType.start) {
+              ref.read(chapterStartCommitProvider)[field.index]?.call();
+            }
+
+            // Look up target's new index in the (possibly-reordered) list.
+            // If the commit replaced the target chapter (e.g. we just edited
+            // its own start time), identity will not match — fall back to
+            // the pre-commit index, which is still valid since a same-row
+            // navigation cannot have been reordered relative to itself.
+            final newBook = ref.read(editorProvider).audiobook;
+            if (newBook == null) return null;
+            var newIdx = newBook.chapters.indexWhere(
+              (c) => identical(c, targetChapter),
+            );
+            if (newIdx < 0) {
+              if (nextIdx >= 0 && nextIdx < newBook.chapters.length) {
+                newIdx = nextIdx;
+              } else {
+                return null;
+              }
+            }
+
+            ref.read(selectedChapterProvider.notifier).state = newIdx;
+
+            final node = nextType == _ChapterFieldType.title
+                ? ref.read(chapterTitleFocusNodesProvider)[newIdx]
+                : ref.read(chapterStartFocusNodesProvider)[newIdx];
+            node?.requestFocus();
             return null;
           }),
         },

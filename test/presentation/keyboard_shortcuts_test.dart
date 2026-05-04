@@ -16,6 +16,7 @@ import 'package:m4b_chapterizer/presentation/screens/editor_screen.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_list.dart'
     show
         chapterScrollRequestProvider,
+        chapterStartFocusNodesProvider,
         chapterTitleFocusNodesProvider,
         selectedChapterProvider;
 
@@ -585,6 +586,101 @@ void _registerWidgetTests() {
       await _sendCmdKey(tester, LogicalKeyboardKey.keyZ, shift: true);
       // Redo did NOT fire — canRedo unchanged.
       expect(h.container.read(editorProvider).canRedo, beforeRedoCanRedo);
+    });
+
+    group('Chapter-list keyboard: Tab', () {
+      testWidgets('Tab from chapter title focuses its start field',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.title.1')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[1]);
+      });
+
+      testWidgets('Tab from chapter start focuses next chapter title',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.1')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        final titleNodes =
+            h.container.read(chapterTitleFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, titleNodes[2]);
+        expect(h.container.read(selectedChapterProvider), 2);
+      });
+
+      testWidgets('Tab from last chapter start wraps to first chapter title',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.2')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        final titleNodes =
+            h.container.read(chapterTitleFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, titleNodes[0]);
+        expect(h.container.read(selectedChapterProvider), 0);
+      });
+
+      testWidgets('Shift+Tab from chapter start goes to that chapter title',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.1')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+
+        final titleNodes =
+            h.container.read(chapterTitleFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, titleNodes[1]);
+      });
+
+      testWidgets(
+          'Shift+Tab from first chapter title wraps to last chapter start',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pump();
+
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[2]);
+        expect(h.container.read(selectedChapterProvider), 2);
+      });
+
+      testWidgets('Tab in a metadata field does not enter the chapter cycle',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        final initial = h.container.read(selectedChapterProvider);
+        await tester.tap(find.byKey(const ValueKey('metadata.title')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+
+        // Selection is unchanged. Whatever Flutter's default traversal
+        // does is not our concern.
+        expect(h.container.read(selectedChapterProvider), initial);
+      });
     });
   });
 }
