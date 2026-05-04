@@ -353,4 +353,67 @@ void main() {
     expect(find.text('Generating waveform…'), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
+
+  testWidgets('seek to a position outside the viewport re-anchors while paused',
+      (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    // Default state: paused, viewport [0, 8s] at 100 px/s.
+    expect(playback.playing, isFalse);
+    playback.emitPosition(const Duration(seconds: 30));
+    await tester.pump();
+
+    // 30s is outside [0,8s]. ensure-visible → followPlayhead at 25%
+    // → windowStart = 30 - 2 = 28s.
+    expect(
+      container
+          .read(waveformViewportProvider)
+          .windowStart
+          .inMilliseconds,
+      closeTo(28000, 50),
+    );
+  });
+
+  testWidgets('seek to a position inside the viewport keeps it put while paused',
+      (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    // Default state: paused, viewport [0, 8s].
+    playback.emitPosition(const Duration(seconds: 4));
+    await tester.pump();
+
+    expect(
+      container.read(waveformViewportProvider).windowStart,
+      Duration.zero,
+    );
+  });
+
+  testWidgets(
+      'drag-pan, then seek inside the panned viewport, keeps viewport put',
+      (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    // Manually set windowStart = 30s.
+    container
+        .read(waveformViewportProvider.notifier)
+        .panBy(3000, const Duration(seconds: 60), 800);
+    final pannedStart =
+        container.read(waveformViewportProvider).windowStart;
+    expect(pannedStart, const Duration(seconds: 30));
+
+    // Seek to 32s, which is inside [30s, 38s].
+    playback.emitPosition(const Duration(seconds: 32));
+    await tester.pump();
+
+    expect(
+      container.read(waveformViewportProvider).windowStart,
+      pannedStart,
+    );
+  });
 }
