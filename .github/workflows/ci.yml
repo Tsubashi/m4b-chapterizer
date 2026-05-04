@@ -28,7 +28,21 @@ jobs:
 
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg -y
+        # Chocolatey installs ffmpeg as a shim under
+        # C:\ProgramData\Chocolatey\bin that launches the real binary
+        # via a hardcoded path; copying the shim into assets/bin/ then
+        # leaves it unable to find its target, so integration tests
+        # that exec the staged ffmpeg fail with exit code -1. Download
+        # a portable build directly so `where ffmpeg` resolves to the
+        # actual ffmpeg.exe.
+        shell: pwsh
+        run: |
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extracted
+          $binDir = (Get-ChildItem ffmpeg-extracted -Directory)[0].FullName + "\bin"
+          Add-Content -Path $env:GITHUB_PATH -Value $binDir
+          & "$binDir\ffmpeg.exe" -version
 
       - name: Ensure ffmpeg present (macOS)
         if: runner.os == 'macOS'
