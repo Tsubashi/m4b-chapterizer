@@ -1,0 +1,241 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:m4b_chapterizer/domain/bookbinder.dart';
+import 'package:m4b_chapterizer/domain/models/audiobook.dart';
+import 'package:m4b_chapterizer/domain/models/chapter.dart';
+import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
+import 'package:m4b_chapterizer/presentation/providers/playback.dart';
+import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
+import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
+import 'package:m4b_chapterizer/presentation/widgets/waveform_view.dart';
+
+class _StubBookbinder implements Bookbinder {
+  @override
+  Future<Audiobook> read(String sourcePath) async => Audiobook.validated(
+        chapters: const [
+          Chapter(title: 'A', start: Duration.zero),
+          Chapter(title: 'B', start: Duration(seconds: 10)),
+        ],
+        totalDuration: const Duration(seconds: 30),
+      );
+  @override
+  Future<void> write({required String sourcePath, required String destinationPath, required Audiobook audiobook}) async {}
+}
+
+class _FakePlayback implements PlaybackController {
+  _FakePlayback() {
+    _positionController = StreamController<Duration>.broadcast();
+    _playingController = StreamController<bool>.broadcast();
+  }
+
+  late final StreamController<Duration> _positionController;
+  late final StreamController<bool> _playingController;
+  final List<Duration> seeks = [];
+  Duration _pos = const Duration(seconds: 7);
+  bool _playing = false;
+
+  void emitPosition(Duration p) {
+    _pos = p;
+    _positionController.add(p);
+  }
+
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async => _playing = true;
+  @override
+  Future<void> pause() async => _playing = false;
+  @override
+  Future<void> seek(Duration position) async {
+    _pos = position;
+    seeks.add(position);
+  }
+
+  @override
+  Duration get position => _pos;
+  @override
+  bool get playing => _playing;
+  @override
+  Stream<Duration> get positionStream => _positionController.stream;
+  @override
+  Stream<bool> get playingStream => _playingController.stream;
+  @override
+  Future<void> dispose() async {
+    await _positionController.close();
+    await _playingController.close();
+  }
+}
+
+void main() {
+  testWidgets('tapping the play/pause button toggles via the controller',
+      (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _StreamingFakePlayback();
+    addTearDown(fakePlayback.close);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    // Initial state: not playing → play button shown.
+    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+
+    // Tap to play.
+    await tester.tap(find.byIcon(Icons.play_arrow));
+    await tester.pump();
+    expect(fakePlayback.playing, isTrue);
+
+    // Stream the new state to update the icon, then tap to pause.
+    fakePlayback.emitPlaying(true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.pause));
+    await tester.pump();
+    expect(fakePlayback.playing, isFalse);
+  });
+
+  testWidgets('play/pause icon tracks playingStream', (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _StreamingFakePlayback();
+    addTearDown(fakePlayback.close);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.play_arrow), findsOneWidget);
+    expect(find.byIcon(Icons.pause), findsNothing);
+
+    fakePlayback.emitPlaying(true);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.byIcon(Icons.pause), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow), findsNothing);
+  });
+
+  group('PlaybackControls scrubber integration', () {
+    testWidgets('renders a ChapterScrubber when an audiobook is loaded',
+        (tester) async {
+      final fake = _StubBookbinder();
+      final fakePlayback = _FakePlayback();
+      final container = ProviderContainer(
+        overrides: [
+          bookbinderProvider.overrideWithValue(fake),
+          playbackControllerProvider.overrideWithValue(fakePlayback),
+        ],
+      );
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ChapterScrubber), findsOneWidget);
+    });
+
+    testWidgets('tapping the scrubber calls controller.seek',
+        (tester) async {
+      final fake = _StubBookbinder();
+      final fakePlayback = _FakePlayback();
+      final container = ProviderContainer(
+        overrides: [
+          bookbinderProvider.overrideWithValue(fake),
+          playbackControllerProvider.overrideWithValue(fakePlayback),
+        ],
+      );
+      await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+      ));
+      await tester.pumpAndSettle();
+
+      final scrubberFinder = find.byType(ChapterScrubber);
+      final topLeft = tester.getTopLeft(scrubberFinder);
+      final size = tester.getSize(scrubberFinder);
+      await tester.tapAt(
+        topLeft + Offset(size.width * 0.5, size.height / 2),
+      );
+      await tester.pump();
+
+      expect(fakePlayback.seeks.length, 1);
+    });
+  });
+
+  testWidgets('renders WaveformView above the ChapterScrubber',
+      (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _FakePlayback();
+    addTearDown(fakePlayback.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    final waveformTop = tester.getTopLeft(find.byType(WaveformView)).dy;
+    final scrubberTop = tester.getTopLeft(find.byType(ChapterScrubber)).dy;
+    expect(waveformTop, lessThan(scrubberTop));
+  });
+}
+
+class _StreamingFakePlayback implements PlaybackController {
+  final _playingController = StreamController<bool>.broadcast();
+  Duration _pos = Duration.zero;
+  bool _playing = false;
+
+  void emitPlaying(bool value) {
+    _playing = value;
+    _playingController.add(value);
+  }
+
+  Future<void> close() => _playingController.close();
+
+  @override
+  Future<void> setSource(String path) async {}
+  @override
+  Future<void> play() async => _playing = true;
+  @override
+  Future<void> pause() async => _playing = false;
+  @override
+  Future<void> seek(Duration position) async => _pos = position;
+  @override
+  Duration get position => _pos;
+  @override
+  bool get playing => _playing;
+  @override
+  Stream<Duration> get positionStream => const Stream.empty();
+  @override
+  Stream<bool> get playingStream => _playingController.stream;
+  @override
+  Future<void> dispose() async {}
+}
