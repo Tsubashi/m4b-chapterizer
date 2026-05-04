@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,13 +19,69 @@ class WaveformView extends ConsumerStatefulWidget {
 }
 
 class _WaveformViewState extends ConsumerState<WaveformView> {
+  StreamSubscription<Duration>? _positionSub;
+
+  // Captured at the latest build so the position-stream listener has
+  // fresh totalDuration and viewportWidth without re-reading providers
+  // outside a build cycle.
+  Duration _latestTotalDuration = Duration.zero;
+  double _latestViewportWidth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final controller = ref.read(playbackControllerProvider);
+    _positionSub = controller.positionStream.listen(_onPosition);
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onPosition(Duration playhead) {
+    final controller = ref.read(playbackControllerProvider);
+    if (!controller.playing) return;
+    if (_latestTotalDuration <= Duration.zero ||
+        _latestViewportWidth <= 0) {
+      return;
+    }
+    ref.read(waveformViewportProvider.notifier).followPlayhead(
+          playhead,
+          _latestTotalDuration,
+          _latestViewportWidth,
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Reset the viewport whenever the file path changes. Deferred to a
+    // post-frame callback so LayoutBuilder has had a chance to capture
+    // the (possibly new) viewport width into _latestViewportWidth.
+    ref.listen<String?>(
+      editorProvider.select((s) => s.path),
+      (previous, next) {
+        if (next != null && next != previous) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            final book = ref.read(editorProvider).audiobook;
+            if (book == null || _latestViewportWidth <= 0) return;
+            ref
+                .read(waveformViewportProvider.notifier)
+                .reset(book.totalDuration, _latestViewportWidth);
+          });
+        }
+      },
+    );
+
     final book = ref.watch(editorProvider).audiobook;
     final path = ref.watch(editorProvider.select((s) => s.path));
     if (book == null || path == null) {
       return const SizedBox(height: WaveformView.height);
     }
+
+    _latestTotalDuration = book.totalDuration;
 
     final peaksAsync = ref.watch(waveformPeaksProvider(path));
     final peaks = peaksAsync.maybeWhen(
@@ -39,6 +97,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
       height: WaveformView.height,
       child: LayoutBuilder(builder: (context, constraints) {
         final width = constraints.maxWidth;
+        _latestViewportWidth = width;
         return Stack(
           children: [
             Positioned.fill(
@@ -46,8 +105,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                 stream: controller.positionStream,
                 initialData: controller.position,
                 builder: (context, snapshot) {
-                  final playhead =
-                      snapshot.data ?? controller.position;
+                  final playhead = snapshot.data ?? controller.position;
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     dragStartBehavior: DragStartBehavior.down,

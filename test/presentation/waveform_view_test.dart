@@ -86,6 +86,7 @@ Future<ProviderContainer> _pump(
       bookbinderProvider.overrideWithValue(_StubBookbinder()),
       playbackControllerProvider.overrideWithValue(playback),
       waveformPeaksProvider('/tmp/x.m4b').overrideWith((ref) async => peaks),
+      waveformPeaksProvider('/tmp/y.m4b').overrideWith((ref) async => peaks),
     ],
   );
   addTearDown(container.dispose);
@@ -238,6 +239,77 @@ void main() {
     expect(
       container.read(waveformViewportProvider).windowStart,
       beforeStart,
+    );
+  });
+
+  testWidgets('viewport follows playhead while playing', (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    playback.emitPlaying(true);
+    await tester.pump();
+    playback.emitPosition(const Duration(seconds: 30));
+    await tester.pump();
+
+    // windowDuration = 800/100 = 8s. Anchor at 25% → start = 30 - 2 = 28s.
+    expect(
+      container
+          .read(waveformViewportProvider)
+          .windowStart
+          .inMilliseconds,
+      closeTo(28000, 50),
+    );
+  });
+
+  testWidgets('viewport does NOT follow while paused', (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    // Pan to a known place first.
+    container
+        .read(waveformViewportProvider.notifier)
+        .panBy(500, const Duration(seconds: 60), 800);
+    final beforeStart =
+        container.read(waveformViewportProvider).windowStart;
+
+    // playing == false (the default). Emit a position update.
+    playback.emitPosition(const Duration(seconds: 30));
+    await tester.pump();
+
+    expect(
+      container.read(waveformViewportProvider).windowStart,
+      beforeStart,
+    );
+  });
+
+  testWidgets('viewport resets when file path changes', (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    final container = await _pump(tester, playback: playback);
+
+    // Zoom and pan.
+    container
+        .read(waveformViewportProvider.notifier)
+        .zoomTo(400, Duration.zero, const Duration(seconds: 60), 800);
+    expect(
+      container.read(waveformViewportProvider).pixelsPerSecond,
+      400,
+    );
+
+    // The fake bookbinder returns the same audiobook regardless of path;
+    // the path itself is what triggers the reset.
+    await container.read(editorProvider.notifier).open('/tmp/y.m4b');
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(waveformViewportProvider).pixelsPerSecond,
+      100,
+    );
+    expect(
+      container.read(waveformViewportProvider).windowStart,
+      Duration.zero,
     );
   });
 }
