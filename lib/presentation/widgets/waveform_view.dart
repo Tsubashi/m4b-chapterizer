@@ -365,11 +365,27 @@ class _WaveformPainter extends CustomPainter {
     final centerY = size.height / 2;
     final windowMicros = (size.width / pixelsPerSecond * 1e6).round();
 
+    // Zero-amplitude axis: a thin horizontal line through the middle,
+    // drawn before the bars so taller peaks overlay it. Standard
+    // audio-editor reference line; also visible when peaks are empty
+    // (loading / no audio) so the body never looks blank.
+    _paintCenterLine(canvas, size, centerY);
+
     if (tile.peaks.isNotEmpty && tile.tileDuration > Duration.zero) {
       _paintWaveform(canvas, size, centerY, windowMicros);
     }
     _paintTicks(canvas, size, windowMicros);
     _paintPlayhead(canvas, size, windowMicros);
+  }
+
+  void _paintCenterLine(Canvas canvas, Size size, double centerY) {
+    canvas.drawLine(
+      Offset(0, centerY),
+      Offset(size.width, centerY),
+      Paint()
+        ..color = unplayedColor
+        ..strokeWidth = 1,
+    );
   }
 
   void _paintWaveform(
