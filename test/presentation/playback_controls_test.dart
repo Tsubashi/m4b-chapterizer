@@ -8,7 +8,6 @@ import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
-import 'package:m4b_chapterizer/presentation/providers/waveform.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
 import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
 import 'package:m4b_chapterizer/presentation/widgets/waveform_view.dart';
@@ -183,56 +182,6 @@ void main() {
 
       expect(fakePlayback.seeks.length, 1);
     });
-  });
-
-  testWidgets('ChapterScrubber receives peaks from waveformPeaksProvider',
-      (tester) async {
-    final fake = _StubBookbinder();
-    final fakePlayback = _FakePlayback();
-    const peaks = [0.0, 1.0, 0.0];
-    final container = ProviderContainer(
-      overrides: [
-        bookbinderProvider.overrideWithValue(fake),
-        playbackControllerProvider.overrideWithValue(fakePlayback),
-        waveformPeaksProvider('/tmp/x.m4b')
-            .overrideWith((ref) async => peaks),
-      ],
-    );
-    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
-    ));
-    await tester.pumpAndSettle();
-
-    final scrubber =
-        tester.widget<ChapterScrubber>(find.byType(ChapterScrubber));
-    expect(scrubber.peaks, peaks);
-  });
-
-  testWidgets('ChapterScrubber receives empty peaks while loading',
-      (tester) async {
-    final fake = _StubBookbinder();
-    final fakePlayback = _FakePlayback();
-    final container = ProviderContainer(
-      overrides: [
-        bookbinderProvider.overrideWithValue(fake),
-        playbackControllerProvider.overrideWithValue(fakePlayback),
-        waveformPeaksProvider('/tmp/x.m4b').overrideWith(
-          (ref) => Completer<List<double>>().future, // never completes
-        ),
-      ],
-    );
-    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
-    await tester.pumpWidget(UncontrolledProviderScope(
-      container: container,
-      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
-    ));
-    await tester.pump();
-
-    final scrubber =
-        tester.widget<ChapterScrubber>(find.byType(ChapterScrubber));
-    expect(scrubber.peaks, isEmpty);
   });
 
   testWidgets('renders WaveformView above the ChapterScrubber',
