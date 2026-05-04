@@ -28,7 +28,7 @@ jobs:
 
       - name: Install ffmpeg (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg-essentials -y
+        run: choco install ffmpeg -y
 
       - name: Ensure ffmpeg present (macOS)
         if: runner.os == 'macOS'
