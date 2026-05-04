@@ -7,6 +7,7 @@ import '../providers/playback.dart';
 import '../providers/waveform.dart';
 import '../util/duration_format.dart';
 import 'chapter_scrubber.dart';
+import 'waveform_view.dart';
 
 class PlaybackControls extends ConsumerWidget {
   const PlaybackControls({super.key});
@@ -31,6 +32,7 @@ class PlaybackControls extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (book != null) const WaveformView(),
           if (book != null)
             StreamBuilder<Duration>(
               stream: controller.positionStream,

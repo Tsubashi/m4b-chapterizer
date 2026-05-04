@@ -11,6 +11,7 @@ import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/providers/waveform.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
 import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
+import 'package:m4b_chapterizer/presentation/widgets/waveform_view.dart';
 
 class _StubBookbinder implements Bookbinder {
   @override
@@ -232,6 +233,29 @@ void main() {
     final scrubber =
         tester.widget<ChapterScrubber>(find.byType(ChapterScrubber));
     expect(scrubber.peaks, isEmpty);
+  });
+
+  testWidgets('renders WaveformView above the ChapterScrubber',
+      (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _FakePlayback();
+    addTearDown(fakePlayback.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    final waveformTop = tester.getTopLeft(find.byType(WaveformView)).dy;
+    final scrubberTop = tester.getTopLeft(find.byType(ChapterScrubber)).dy;
+    expect(waveformTop, lessThan(scrubberTop));
   });
 }
 
