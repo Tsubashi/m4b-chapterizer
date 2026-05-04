@@ -197,6 +197,104 @@ class _ChapterFieldAction<T extends Intent> extends Action<T> {
   }
 }
 
+/// Up/Down handler. Three branches:
+/// - Focus on a chapter title or start field: commit any pending edit and
+///   jump to the corresponding field of the chapter above/below.
+/// - Focus on a non-chapter EditableText (metadata): action is disabled so
+///   the field's own arrow handling runs.
+/// - No field focused: move chapter selection, clamp at bounds, seek.
+class _MoveChapterSelectionAction
+    extends Action<MoveChapterSelectionIntent> {
+  _MoveChapterSelectionAction(this._ref);
+
+  final WidgetRef _ref;
+
+  bool _isInOtherEditableText() {
+    final focused = FocusManager.instance.primaryFocus;
+    if (focused == null) return false;
+    final inEditable =
+        focused.context?.findAncestorWidgetOfExactType<EditableText>() !=
+            null;
+    if (!inEditable) return false;
+    return _focusedChapterField(_ref) == null;
+  }
+
+  @override
+  bool isEnabled(MoveChapterSelectionIntent intent, [BuildContext? c]) =>
+      !_isInOtherEditableText();
+
+  @override
+  bool consumesKey(MoveChapterSelectionIntent intent) =>
+      !_isInOtherEditableText();
+
+  @override
+  Object? invoke(MoveChapterSelectionIntent intent) {
+    final field = _focusedChapterField(_ref);
+    if (field != null) {
+      return _invokeChapterFieldBranch(intent, field);
+    }
+    return _invokeNoFocusBranch(intent);
+  }
+
+  Object? _invokeChapterFieldBranch(
+    MoveChapterSelectionIntent intent,
+    _FocusedChapterField field,
+  ) {
+    final book = _ref.read(editorProvider).audiobook;
+    if (book == null) return null;
+    final n = book.chapters.length;
+    final targetIdx = field.index + intent.delta;
+    if (targetIdx < 0 || targetIdx >= n) return null;
+
+    final targetChapter = book.chapters[targetIdx];
+
+    if (field.type == _ChapterFieldType.start) {
+      _ref.read(chapterStartCommitProvider)[field.index]?.call();
+    }
+
+    final newBook = _ref.read(editorProvider).audiobook;
+    if (newBook == null) return null;
+    final newIdx =
+        newBook.chapters.indexWhere((c) => identical(c, targetChapter));
+    // Fallback for the case where setChapterStart rebuilt the target's
+    // own object via copyWith (only happens when delta == 0, which we
+    // already filtered, but matched for parity with Tab action).
+    final resolvedIdx = (newIdx < 0 &&
+            targetIdx >= 0 &&
+            targetIdx < newBook.chapters.length)
+        ? targetIdx
+        : newIdx;
+    if (resolvedIdx < 0) return null;
+
+    _ref.read(selectedChapterProvider.notifier).state = resolvedIdx;
+    _ref
+        .read(playbackControllerProvider)
+        .seek(newBook.chapters[resolvedIdx].start);
+    _ref.read(chapterScrollRequestProvider.notifier).state++;
+
+    final node = field.type == _ChapterFieldType.title
+        ? _ref.read(chapterTitleFocusNodesProvider)[resolvedIdx]
+        : _ref.read(chapterStartFocusNodesProvider)[resolvedIdx];
+    node?.requestFocus();
+    return null;
+  }
+
+  Object? _invokeNoFocusBranch(MoveChapterSelectionIntent intent) {
+    final book = _ref.read(editorProvider).audiobook;
+    if (book == null) return null;
+    final cur = _ref.read(selectedChapterProvider);
+    final next =
+        (cur + intent.delta).clamp(0, book.chapters.length - 1);
+    if (next == cur) return null;
+    _ref.read(selectedChapterProvider.notifier).state = next;
+    _ref
+        .read(playbackControllerProvider)
+        .seek(book.chapters[next].start);
+    _ref.read(chapterScrollRequestProvider.notifier).state++;
+    return null;
+  }
+}
+
 class EditorShortcuts extends ConsumerStatefulWidget {
   const EditorShortcuts({super.key, required this.child});
 
@@ -275,19 +373,7 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
             c.seek(clamped);
             return null;
           }),
-          MoveChapterSelectionIntent:
-              _BareKeyAction<MoveChapterSelectionIntent>((intent) {
-            final book = ref.read(editorProvider).audiobook;
-            if (book == null) return null;
-            final cur = ref.read(selectedChapterProvider);
-            final next = (cur + intent.delta)
-                .clamp(0, book.chapters.length - 1);
-            if (next == cur) return null;
-            ref.read(selectedChapterProvider.notifier).state = next;
-            ref.read(playbackControllerProvider).seek(book.chapters[next].start);
-            ref.read(chapterScrollRequestProvider.notifier).state++;
-            return null;
-          }),
+          MoveChapterSelectionIntent: _MoveChapterSelectionAction(ref),
           DeleteSelectedChapterIntent:
               _BareKeyAction<DeleteSelectedChapterIntent>((_) {
             final book = ref.read(editorProvider).audiobook;

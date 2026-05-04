@@ -196,6 +196,34 @@ Future<({ProviderContainer container, _FakePlayback playback, _StubBookbinder bo
   return (container: container, playback: playback, book: bookbinder);
 }
 
+Future<({ProviderContainer container, _FakePlayback playback, _StubBookbinder book})>
+    _pumpEditorWith4Chapters(WidgetTester tester) async {
+  final audiobook = Audiobook.validated(
+    title: 'KB Test 4',
+    chapters: const [
+      Chapter(title: 'A', start: Duration.zero),
+      Chapter(title: 'B', start: Duration(seconds: 10)),
+      Chapter(title: 'C', start: Duration(seconds: 30)),
+      Chapter(title: 'D', start: Duration(seconds: 40)),
+    ],
+    totalDuration: const Duration(seconds: 60),
+  );
+  final bookbinder = _StubBookbinder(audiobook);
+  final playback = _FakePlayback();
+  final container = ProviderContainer(overrides: [
+    bookbinderProvider.overrideWithValue(bookbinder),
+    playbackControllerProvider.overrideWithValue(playback),
+    dragDropChannelProvider.overrideWithValue(_StubChannel()),
+  ]);
+  await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+  await tester.pumpWidget(UncontrolledProviderScope(
+    container: container,
+    child: const MaterialApp(home: EditorScreen()),
+  ));
+  await tester.pumpAndSettle();
+  return (container: container, playback: playback, book: bookbinder);
+}
+
 Future<void> _sendCmdKey(WidgetTester tester, LogicalKeyboardKey key,
     {bool shift = false}) async {
   final mod = Platform.isMacOS
@@ -354,7 +382,7 @@ void _registerWidgetTests() {
     });
 
     testWidgets(
-        'ArrowDown does NOT change selection while a TextField is focused',
+        'ArrowDown in a chapter title field commits and jumps to the next row',
         (tester) async {
       final h = await _pumpEditor(tester);
       h.container.read(selectedChapterProvider.notifier).state = 0;
@@ -362,7 +390,9 @@ void _registerWidgetTests() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
-      expect(h.container.read(selectedChapterProvider), 0);
+      // New behavior: Up/Down inside chapter fields jump rows. Detailed
+      // expectations live in the "Chapter-list keyboard: Up / Down" group.
+      expect(h.container.read(selectedChapterProvider), 1);
     });
 
     testWidgets('ArrowDown seeks to the next chapter\'s start',
@@ -680,6 +710,137 @@ void _registerWidgetTests() {
         // Selection is unchanged. Whatever Flutter's default traversal
         // does is not our concern.
         expect(h.container.read(selectedChapterProvider), initial);
+      });
+    });
+
+    group('Chapter-list keyboard: Up / Down', () {
+      testWidgets('ArrowDown in title commits and focuses next title',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+            find.byKey(const ValueKey('chapters.title.0')),
+            'New Title');
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+
+        final book = h.container.read(editorProvider).audiobook!;
+        expect(book.chapters[0].title, 'New Title');
+        expect(h.container.read(selectedChapterProvider), 1);
+        final titleNodes =
+            h.container.read(chapterTitleFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, titleNodes[1]);
+      });
+
+      testWidgets('ArrowUp in start focuses previous start',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.1')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[0]);
+        expect(h.container.read(selectedChapterProvider), 0);
+      });
+
+      testWidgets(
+          'ArrowUp in start with valid new time uses pre-commit position',
+          (tester) async {
+        // 4 chapters: A=0, B=10s, C=30s, D=40s.
+        final h = await _pumpEditorWith4Chapters(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.2')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+            find.byKey(const ValueKey('chapters.start.2')),
+            '00:00:00.005');
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        // Commit reorders to [A, C, B, D]. Pre-commit target was B
+        // (idx 1). B's new idx is 2. Selection lands at 2.
+        final book = h.container.read(editorProvider).audiobook!;
+        expect(book.chapters[1].title, 'C');
+        expect(book.chapters[2].title, 'B');
+        expect(h.container.read(selectedChapterProvider), 2);
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[2]);
+      });
+
+      testWidgets('ArrowUp at first chapter is a no-op', (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+        await tester.pump();
+
+        final titleNodes =
+            h.container.read(chapterTitleFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, titleNodes[0]);
+        expect(h.container.read(selectedChapterProvider), 0);
+      });
+
+      testWidgets('ArrowDown at last chapter is a no-op', (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.start.2')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[2]);
+        expect(h.container.read(selectedChapterProvider), 2);
+      });
+
+      testWidgets('ArrowDown in metadata field does not move chapter selection',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        final initial = h.container.read(selectedChapterProvider);
+        await tester.tap(find.byKey(const ValueKey('metadata.title')));
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+
+        expect(h.container.read(selectedChapterProvider), initial);
+      });
+
+      testWidgets(
+          'ArrowDown in start with unparseable text reverts and moves',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        final originalStart = h.container
+            .read(editorProvider)
+            .audiobook!
+            .chapters[0]
+            .start;
+        await tester.tap(find.byKey(const ValueKey('chapters.start.0')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+            find.byKey(const ValueKey('chapters.start.0')), 'garbage');
+        await tester.pump();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+
+        final book = h.container.read(editorProvider).audiobook!;
+        expect(book.chapters[0].start, originalStart);
+        expect(h.container.read(selectedChapterProvider), 1);
+        final startNodes =
+            h.container.read(chapterStartFocusNodesProvider);
+        expect(FocusManager.instance.primaryFocus, startNodes[1]);
       });
     });
   });
