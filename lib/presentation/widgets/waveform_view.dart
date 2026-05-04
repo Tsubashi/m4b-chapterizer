@@ -8,8 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/editor_state.dart';
 import '../providers/playback.dart';
-import '../providers/waveform.dart';
 import '../providers/waveform_viewport.dart';
+import '../providers/zoomed_waveform_peaks.dart';
 
 class WaveformView extends ConsumerStatefulWidget {
   const WaveformView({super.key});
@@ -22,10 +22,6 @@ class WaveformView extends ConsumerStatefulWidget {
 
 class _WaveformViewState extends ConsumerState<WaveformView> {
   StreamSubscription<Duration>? _positionSub;
-
-  // Captured at the latest build so the position-stream listener has
-  // fresh totalDuration and viewportWidth without re-reading providers
-  // outside a build cycle.
   Duration _latestTotalDuration = Duration.zero;
   double _latestViewportWidth = 0;
 
@@ -43,24 +39,36 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
   }
 
   void _onPosition(Duration playhead) {
-    final controller = ref.read(playbackControllerProvider);
-    if (!controller.playing) return;
     if (_latestTotalDuration <= Duration.zero ||
         _latestViewportWidth <= 0) {
       return;
     }
-    ref.read(waveformViewportProvider.notifier).followPlayhead(
-          playhead,
-          _latestTotalDuration,
-          _latestViewportWidth,
-        );
+    final controller = ref.read(playbackControllerProvider);
+    final notifier = ref.read(waveformViewportProvider.notifier);
+    if (controller.playing) {
+      notifier.followPlayhead(
+        playhead,
+        _latestTotalDuration,
+        _latestViewportWidth,
+      );
+      return;
+    }
+    final viewport = ref.read(waveformViewportProvider);
+    final windowMicros =
+        (_latestViewportWidth / viewport.pixelsPerSecond * 1e6).round();
+    final windowEnd =
+        viewport.windowStart + Duration(microseconds: windowMicros);
+    if (playhead < viewport.windowStart || playhead > windowEnd) {
+      notifier.followPlayhead(
+        playhead,
+        _latestTotalDuration,
+        _latestViewportWidth,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Reset the viewport whenever the file path changes. Deferred to a
-    // post-frame callback so LayoutBuilder has had a chance to capture
-    // the (possibly new) viewport width into _latestViewportWidth.
     ref.listen<String?>(
       editorProvider.select((s) => s.path),
       (previous, next) {
@@ -82,14 +90,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
     if (book == null || path == null) {
       return const SizedBox(height: WaveformView.height);
     }
-
     _latestTotalDuration = book.totalDuration;
-
-    final peaksAsync = ref.watch(waveformPeaksProvider(path));
-    final peaks = peaksAsync.maybeWhen(
-      data: (p) => p,
-      orElse: () => const <double>[],
-    );
 
     final viewport = ref.watch(waveformViewportProvider);
     final controller = ref.watch(playbackControllerProvider);
@@ -100,6 +101,28 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
       child: LayoutBuilder(builder: (context, constraints) {
         final width = constraints.maxWidth;
         _latestViewportWidth = width;
+
+        final viewportDurationMicros =
+            (width / viewport.pixelsPerSecond * 1e6).round();
+        final tileIndex = viewportDurationMicros == 0
+            ? 0
+            : viewport.windowStart.inMicroseconds ~/ viewportDurationMicros;
+        final tileKey = WaveformTileKey(
+          path: path,
+          tileIndex: tileIndex,
+          viewportDurationMicros: viewportDurationMicros,
+          pixelsPerSecond: viewport.pixelsPerSecond,
+        );
+        final tileAsync = ref.watch(zoomedWaveformPeaksProvider(tileKey));
+        final tile = tileAsync.maybeWhen(
+          data: (t) => t,
+          orElse: () => const WaveformTilePeaks(
+            tileStart: Duration.zero,
+            tileDuration: Duration.zero,
+            peaks: [],
+          ),
+        );
+
         return Stack(
           children: [
             Positioned.fill(
@@ -110,11 +133,6 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                   final playhead = snapshot.data ?? controller.position;
                   return Listener(
                     // coverage:ignore-start
-                    // Cmd+scroll and Cmd+pinch zoom are exercised via smoke tests
-                    // on a real desktop build. flutter test cannot synthesize raw
-                    // pointer-scroll events with modifier-key state in a portable
-                    // way; the rest of the widget's behavior is covered by the
-                    // GestureDetector tests in waveform_view_test.dart.
                     onPointerSignal: (event) {
                       if (event is! PointerScrollEvent) return;
                       if (!_isZoomModifierHeld()) return;
@@ -137,7 +155,8 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                     onPointerPanZoomUpdate: (event) {
                       if (!_isZoomModifierHeld()) return;
                       if (event.scale == 1.0) return;
-                      final newPxPerSec = viewport.pixelsPerSecond * event.scale;
+                      final newPxPerSec =
+                          viewport.pixelsPerSecond * event.scale;
                       final cursorTime = _timeAt(
                         event.localPosition.dx,
                         width,
@@ -171,8 +190,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                       child: CustomPaint(
                         size: Size(width, WaveformView.height),
                         painter: _WaveformPainter(
-                          peaks: peaks,
-                          totalDuration: book.totalDuration,
+                          tile: tile,
                           windowStart: viewport.windowStart,
                           pixelsPerSecond: viewport.pixelsPerSecond,
                           playhead: playhead,
@@ -195,6 +213,36 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                 },
               ),
             ),
+            if (tileAsync.isLoading)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Generating waveform…',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               top: 4,
               right: 4,
@@ -228,8 +276,8 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
     final fraction = (localX / width).clamp(0.0, 1.0);
     final windowMicros =
         (width / viewport.pixelsPerSecond * 1e6).round();
-    final tMicros =
-        viewport.windowStart.inMicroseconds + (fraction * windowMicros).round();
+    final tMicros = viewport.windowStart.inMicroseconds +
+        (fraction * windowMicros).round();
     final clamped = tMicros.clamp(0, totalDuration.inMicroseconds);
     controller.seek(Duration(microseconds: clamped));
   }
@@ -288,8 +336,7 @@ class _ZoomButtons extends StatelessWidget {
 
 class _WaveformPainter extends CustomPainter {
   _WaveformPainter({
-    required this.peaks,
-    required this.totalDuration,
+    required this.tile,
     required this.windowStart,
     required this.pixelsPerSecond,
     required this.playhead,
@@ -300,8 +347,7 @@ class _WaveformPainter extends CustomPainter {
     required this.playheadColor,
   });
 
-  final List<double> peaks;
-  final Duration totalDuration;
+  final WaveformTilePeaks tile;
   final Duration windowStart;
   final double pixelsPerSecond;
   final Duration playhead;
@@ -319,7 +365,7 @@ class _WaveformPainter extends CustomPainter {
     final centerY = size.height / 2;
     final windowMicros = (size.width / pixelsPerSecond * 1e6).round();
 
-    if (peaks.isNotEmpty) {
+    if (tile.peaks.isNotEmpty && tile.tileDuration > Duration.zero) {
       _paintWaveform(canvas, size, centerY, windowMicros);
     }
     _paintTicks(canvas, size, windowMicros);
@@ -339,17 +385,19 @@ class _WaveformPainter extends CustomPainter {
       ..color = unplayedColor
       ..strokeWidth = 1;
     final pixelCount = size.width.ceil();
-    final totalMicros = totalDuration.inMicroseconds;
-    if (totalMicros <= 0) return;
+    final tileStartMicros = tile.tileStart.inMicroseconds;
+    final tileDurationMicros = tile.tileDuration.inMicroseconds;
+    final peaksLen = tile.peaks.length;
     for (var px = 0; px < pixelCount; px++) {
       final fractionInWindow = px / size.width;
       final tMicros = windowStart.inMicroseconds +
           (fractionInWindow * windowMicros).round();
-      if (tMicros < 0 || tMicros >= totalMicros) continue;
-      final binFraction = tMicros / totalMicros;
-      var binIndex = (binFraction * peaks.length).floor();
-      if (binIndex >= peaks.length) binIndex = peaks.length - 1;
-      final peak = peaks[binIndex];
+      final relMicros = tMicros - tileStartMicros;
+      if (relMicros < 0 || relMicros >= tileDurationMicros) continue;
+      var binIndex =
+          (relMicros / tileDurationMicros * peaksLen).floor();
+      if (binIndex >= peaksLen) binIndex = peaksLen - 1;
+      final peak = tile.peaks[binIndex];
       final h = peak * _halfHeight;
       final paint = tMicros <= playhead.inMicroseconds ? played : unplayed;
       canvas.drawLine(
@@ -387,8 +435,7 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WaveformPainter old) =>
-      old.peaks != peaks ||
-      old.totalDuration != totalDuration ||
+      old.tile != tile ||
       old.windowStart != windowStart ||
       old.pixelsPerSecond != pixelsPerSecond ||
       old.playhead != playhead ||

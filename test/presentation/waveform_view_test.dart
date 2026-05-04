@@ -8,8 +8,8 @@ import 'package:m4b_chapterizer/domain/models/audiobook.dart';
 import 'package:m4b_chapterizer/domain/models/chapter.dart';
 import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
-import 'package:m4b_chapterizer/presentation/providers/waveform.dart';
 import 'package:m4b_chapterizer/presentation/providers/waveform_viewport.dart';
+import 'package:m4b_chapterizer/presentation/providers/zoomed_waveform_peaks.dart';
 import 'package:m4b_chapterizer/presentation/widgets/waveform_view.dart';
 
 class _StubBookbinder implements Bookbinder {
@@ -79,20 +79,29 @@ class _FakePlayback implements PlaybackController {
 Future<ProviderContainer> _pump(
   WidgetTester tester, {
   required _FakePlayback playback,
-  List<double> peaks = const [],
+  WaveformTilePeaks? tilePeaks,
+  bool loading = false,
 }) async {
+  final canned = tilePeaks ??
+      const WaveformTilePeaks(
+        tileStart: Duration.zero,
+        tileDuration: Duration(seconds: 24),
+        peaks: [],
+      );
   final container = ProviderContainer(
     overrides: [
       bookbinderProvider.overrideWithValue(_StubBookbinder()),
       playbackControllerProvider.overrideWithValue(playback),
-      waveformPeaksProvider('/tmp/x.m4b').overrideWith((ref) async => peaks),
-      waveformPeaksProvider('/tmp/y.m4b').overrideWith((ref) async => peaks),
+      zoomedWaveformPeaksProvider.overrideWith(
+        (ref, key) => loading
+            ? Completer<WaveformTilePeaks>().future
+            : Future.value(canned),
+      ),
     ],
   );
   addTearDown(container.dispose);
   await container.read(editorProvider.notifier).open('/tmp/x.m4b');
 
-  // Force the viewport's tester-side width to a known value (800).
   await tester.binding.setSurfaceSize(const Size(800, 600));
   addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -102,7 +111,13 @@ Future<ProviderContainer> _pump(
       home: Scaffold(body: SizedBox(width: 800, child: WaveformView())),
     ),
   ));
-  await tester.pumpAndSettle();
+  if (loading) {
+    // CircularProgressIndicator animates forever, so pumpAndSettle would
+    // hang. A single pump is enough to flush the initial build.
+    await tester.pump();
+  } else {
+    await tester.pumpAndSettle();
+  }
   return container;
 }
 
@@ -123,7 +138,11 @@ void main() {
     await _pump(
       tester,
       playback: playback,
-      peaks: const [0.0, 0.5, 1.0, 0.5, 0.0],
+      tilePeaks: const WaveformTilePeaks(
+        tileStart: Duration.zero,
+        tileDuration: Duration(seconds: 24),
+        peaks: [0.0, 0.5, 1.0, 0.5, 0.0],
+      ),
     );
     expect(tester.takeException(), isNull);
   });
@@ -267,15 +286,17 @@ void main() {
     addTearDown(playback.dispose);
     final container = await _pump(tester, playback: playback);
 
-    // Pan to a known place first.
+    // Pan to a known place first: panBy 500 px at 100 px/s → start = 5s,
+    // window = [5s, 13s].
     container
         .read(waveformViewportProvider.notifier)
         .panBy(500, const Duration(seconds: 60), 800);
     final beforeStart =
         container.read(waveformViewportProvider).windowStart;
 
-    // playing == false (the default). Emit a position update.
-    playback.emitPosition(const Duration(seconds: 30));
+    // playing == false (the default). Emit a position update INSIDE the
+    // current window so the ensure-visible branch is a no-op.
+    playback.emitPosition(const Duration(seconds: 8));
     await tester.pump();
 
     expect(
@@ -311,5 +332,25 @@ void main() {
       container.read(waveformViewportProvider).windowStart,
       Duration.zero,
     );
+  });
+
+  testWidgets('shows loading indicator while the active tile is loading',
+      (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    await _pump(tester, playback: playback, loading: true);
+
+    expect(find.text('Generating waveform…'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('hides loading indicator once the tile resolves',
+      (tester) async {
+    final playback = _FakePlayback();
+    addTearDown(playback.dispose);
+    await _pump(tester, playback: playback);
+
+    expect(find.text('Generating waveform…'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 }
