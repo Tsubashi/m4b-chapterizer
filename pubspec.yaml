@@ -1,5 +1,5 @@
 name: m4b_chapterizer
-description: "A new Flutter project."
+description: "A GUI utility for editing M4B chapters and metadata."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -53,6 +53,19 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   mocktail: ^1.0.3
+  flutter_launcher_icons: ^0.14.4
+
+# Configuration for `dart run flutter_launcher_icons`. Regenerates the
+# macOS appiconset PNGs and the Windows .ico from the source PNG.
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
