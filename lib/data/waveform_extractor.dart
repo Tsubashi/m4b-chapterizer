@@ -19,6 +19,7 @@ class WaveformExtractor {
   Process? _activeProcess;
   bool _cancelled = false;
 
+  /// Extracts [targetPeaks] amplitude bins covering the full file.
   Future<List<double>> extract({
     required String path,
     required Duration totalDuration,
@@ -26,9 +27,6 @@ class WaveformExtractor {
   }) async {
     final totalSamples =
         (totalDuration.inMicroseconds * 8000) ~/ Duration.microsecondsPerSecond;
-    var samplesPerBin = totalSamples ~/ targetPeaks;
-    if (samplesPerBin < 1) samplesPerBin = 1;
-
     final process = await processStarter(binaries.ffmpeg, [
       '-loglevel', 'error',
       '-i', path,
@@ -38,6 +36,54 @@ class WaveformExtractor {
       '-ar', '8000',
       '-',
     ]);
+    return _binStream(
+      process: process,
+      totalSamples: totalSamples,
+      targetPeaks: targetPeaks,
+    );
+  }
+
+  /// Like [extract], but only for the half-open audio window
+  /// `[start, start + duration)`. Uses ffmpeg's `-ss` (input seek)
+  /// before `-i` for fast container-indexed seek and `-t` after `-i`
+  /// to limit the output duration.
+  Future<List<double>> extractRange({
+    required String path,
+    required Duration start,
+    required Duration duration,
+    required int targetPeaks,
+  }) async {
+    final totalSamples =
+        (duration.inMicroseconds * 8000) ~/ Duration.microsecondsPerSecond;
+    final startSeconds =
+        start.inMicroseconds / Duration.microsecondsPerSecond;
+    final durationSeconds =
+        duration.inMicroseconds / Duration.microsecondsPerSecond;
+    final process = await processStarter(binaries.ffmpeg, [
+      '-loglevel', 'error',
+      '-ss', startSeconds.toString(),
+      '-i', path,
+      '-t', durationSeconds.toString(),
+      '-map', '0:a',
+      '-f', 's16le',
+      '-ac', '1',
+      '-ar', '8000',
+      '-',
+    ]);
+    return _binStream(
+      process: process,
+      totalSamples: totalSamples,
+      targetPeaks: targetPeaks,
+    );
+  }
+
+  Future<List<double>> _binStream({
+    required Process process,
+    required int totalSamples,
+    required int targetPeaks,
+  }) async {
+    var samplesPerBin = totalSamples ~/ targetPeaks;
+    if (samplesPerBin < 1) samplesPerBin = 1;
     _activeProcess = process;
 
     final peaks = <double>[];

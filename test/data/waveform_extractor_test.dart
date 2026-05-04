@@ -190,4 +190,101 @@ void main() {
       );
     });
   });
+
+  group('WaveformExtractor.extractRange', () {
+    test('invokes ffmpeg with -ss before -i and -t after', () async {
+      List<String>? capturedArgs;
+      final extractor = WaveformExtractor(
+        binaries: binaries,
+        processStarter: (exe, args) async {
+          capturedArgs = args;
+          return _MockProcess(
+            stdout: const Stream.empty(),
+            exitCode: Future.value(0),
+          );
+        },
+      );
+
+      await extractor.extractRange(
+        path: '/x.m4b',
+        start: const Duration(seconds: 10),
+        duration: const Duration(seconds: 30),
+        targetPeaks: 100,
+      );
+
+      expect(capturedArgs, isNotNull);
+      final args = capturedArgs!;
+      // -ss must precede -i (input seek for fast container indexing).
+      final ssIdx = args.indexOf('-ss');
+      final iIdx = args.indexOf('-i');
+      final tIdx = args.indexOf('-t');
+      expect(ssIdx, greaterThanOrEqualTo(0));
+      expect(iIdx, greaterThan(ssIdx));
+      expect(tIdx, greaterThan(iIdx));
+      // -ss value is the start in seconds.
+      expect(double.parse(args[ssIdx + 1]), closeTo(10.0, 1e-9));
+      // -t value is the duration in seconds.
+      expect(double.parse(args[tIdx + 1]), closeTo(30.0, 1e-9));
+      expect(args[iIdx + 1], '/x.m4b');
+    });
+
+    test('bins windowed PCM into the requested number of peaks', () async {
+      // 240,000 samples at constant amplitude 16384. With 30 s duration and
+      // targetPeaks=10: samplesPerBin = 30 * 8000 / 10 = 24000.
+      final samples = List.filled(240000, 16384);
+      final bytes = _samples(samples);
+
+      final extractor = WaveformExtractor(
+        binaries: binaries,
+        processStarter: (exe, args) async => _MockProcess(
+          stdout: Stream.value(bytes),
+          exitCode: Future.value(0),
+        ),
+      );
+
+      final peaks = await extractor.extractRange(
+        path: '/x.m4b',
+        start: const Duration(seconds: 5),
+        duration: const Duration(seconds: 30),
+        targetPeaks: 10,
+      );
+
+      expect(peaks.length, 10);
+      for (final p in peaks) {
+        expect(p, closeTo(0.5, 1e-6));
+      }
+    });
+
+    test('cancellation kills the process and throws WaveformCancelled',
+        () async {
+      final stdoutController = StreamController<List<int>>();
+      addTearDown(stdoutController.close);
+      final exitCompleter = Completer<int>();
+      final extractor = WaveformExtractor(
+        binaries: binaries,
+        processStarter: (exe, args) async => _MockProcess(
+          stdout: stdoutController.stream,
+          exitCode: exitCompleter.future,
+          onKill: () {
+            if (!exitCompleter.isCompleted) exitCompleter.complete(137);
+          },
+        ),
+      );
+
+      final future = extractor.extractRange(
+        path: '/x.m4b',
+        start: Duration.zero,
+        duration: const Duration(seconds: 5),
+        targetPeaks: 10,
+      );
+      final expectation =
+          expectLater(future, throwsA(isA<WaveformCancelled>()));
+      // Pump a small amount of data, then cancel.
+      stdoutController.add(_samples(List.filled(100, 16384)));
+      await Future<void>.delayed(Duration.zero);
+      extractor.cancel();
+      await stdoutController.close();
+      await expectation;
+    });
+  });
 }

@@ -75,6 +75,16 @@ class _RecordingExtractor implements WaveformExtractor {
   }
 
   @override
+  Future<List<double>> extractRange({
+    required String path,
+    required Duration start,
+    required Duration duration,
+    required int targetPeaks,
+  }) async {
+    return const [0.5, 0.5, 0.5];
+  }
+
+  @override
   void cancel() {}
 }
 
