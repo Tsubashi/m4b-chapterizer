@@ -13,6 +13,12 @@ final selectedChapterProvider = StateProvider<int>((ref) => 0);
 final chapterTitleFocusNodesProvider =
     Provider<Map<int, FocusNode>>((ref) => <int, FocusNode>{});
 
+final chapterStartFocusNodesProvider =
+    Provider<Map<int, FocusNode>>((ref) => <int, FocusNode>{});
+
+final chapterStartCommitProvider =
+    Provider<Map<int, void Function()>>((ref) => <int, void Function()>{});
+
 /// Increments each time `EditorNotifier.undo()` or `redo()` produces a chapter
 /// change. The chapter list listens to this counter and scrolls the selected
 /// chapter into view when it fires. Click and arrow-key selection do NOT
@@ -165,6 +171,8 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
   late final TextEditingController _startController;
   // Cached so it remains accessible in dispose() after the widget unmounts.
   late final Map<int, FocusNode> _focusNodesMap;
+  late final Map<int, FocusNode> _startFocusNodesMap;
+  late final Map<int, void Function()> _startCommitMap;
 
   @override
   void initState() {
@@ -176,6 +184,10 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
         TextEditingController(text: formatDuration(widget.chapter.start));
     _focusNodesMap = ref.read(chapterTitleFocusNodesProvider);
     _focusNodesMap[widget.index] = _titleFocusNode;
+    _startFocusNodesMap = ref.read(chapterStartFocusNodesProvider);
+    _startFocusNodesMap[widget.index] = _startFocusNode;
+    _startCommitMap = ref.read(chapterStartCommitProvider);
+    _startCommitMap[widget.index] = _commitStart;
   }
 
   void _onTitleFocusChanged() {
@@ -196,12 +208,42 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
     }
   }
 
+  void _commitStart() {
+    final text = _startController.text;
+    Duration parsed;
+    try {
+      parsed = parseDuration(text);
+    } on FormatException {
+      _startController.text = formatDuration(widget.chapter.start);
+      return;
+    }
+    final error = widget.onStartChanged(parsed);
+    if (error != null) {
+      _startController.text = formatDuration(widget.chapter.start);
+      if (mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(SnackBar(
+          content: Text(switch (error) {
+            SetChapterStartError.duplicate =>
+                'Chapter start times must be unique',
+            SetChapterStartError.firstNotZero =>
+                'First chapter must start at 00:00:00.000',
+          }),
+        ));
+      }
+    }
+  }
+
   @override
   void didUpdateWidget(covariant _ChapterRow oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index) {
       _focusNodesMap.remove(oldWidget.index);
       _focusNodesMap[widget.index] = _titleFocusNode;
+      _startFocusNodesMap.remove(oldWidget.index);
+      _startFocusNodesMap[widget.index] = _startFocusNode;
+      _startCommitMap.remove(oldWidget.index);
+      _startCommitMap[widget.index] = _commitStart;
     }
     if (widget.chapter.title != _titleController.text) {
       _titleController.text = widget.chapter.title;
@@ -215,6 +257,8 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
   @override
   void dispose() {
     _focusNodesMap.remove(widget.index);
+    _startFocusNodesMap.remove(widget.index);
+    _startCommitMap.remove(widget.index);
     _titleFocusNode.dispose();
     _startFocusNode.dispose();
     _titleController.dispose();
@@ -267,28 +311,7 @@ class _ChapterRowState extends ConsumerState<_ChapterRow> {
                 controller: _startController,
                 onTap: widget.onTap,
                 decoration: const InputDecoration(isDense: true),
-                onSubmitted: (v) {
-                  Duration parsed;
-                  try {
-                    parsed = parseDuration(v);
-                  } on FormatException {
-                    _startController.text = formatDuration(widget.chapter.start);
-                    return;
-                  }
-                  final error = widget.onStartChanged(parsed);
-                  if (error != null) {
-                    _startController.text = formatDuration(widget.chapter.start);
-                    final messenger = ScaffoldMessenger.of(context);
-                    messenger.showSnackBar(SnackBar(
-                      content: Text(switch (error) {
-                        SetChapterStartError.duplicate =>
-                            'Chapter start times must be unique',
-                        SetChapterStartError.firstNotZero =>
-                            'First chapter must start at 00:00:00.000',
-                      }),
-                    ));
-                  }
-                },
+                onSubmitted: (_) => _commitStart(),
               ),
             ),
           ),
