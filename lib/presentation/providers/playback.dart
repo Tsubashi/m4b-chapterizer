@@ -16,10 +16,13 @@ abstract class PlaybackController {
   Future<void> play();
   Future<void> pause();
   Future<void> seek(Duration position);
+  Future<void> setSpeed(double speed);
   Duration get position;
   bool get playing;
+  double get speed;
   Stream<Duration> get positionStream;
   Stream<bool> get playingStream;
+  Stream<double> get speedStream;
   Future<void> dispose();
 }
 
@@ -42,13 +45,19 @@ class JustAudioPlaybackController implements PlaybackController {
   @override
   Future<void> seek(Duration position) => _player.seek(position);
   @override
+  Future<void> setSpeed(double speed) => _player.setSpeed(speed);
+  @override
   Duration get position => _player.position;
   @override
   bool get playing => _player.playing;
   @override
+  double get speed => _player.speed;
+  @override
   Stream<Duration> get positionStream => _player.positionStream;
   @override
   Stream<bool> get playingStream => _player.playingStream;
+  @override
+  Stream<double> get speedStream => _player.speedStream;
   @override
   Future<void> dispose() => _player.dispose();
 }

@@ -36,10 +36,18 @@ class _FakePlayback implements PlaybackController {
   final List<Duration> seeks = [];
   Duration _pos = const Duration(seconds: 7);
   bool _playing = false;
+  double _speed = 1.0;
+  double? lastSetSpeed;
+  final speedController = StreamController<double>.broadcast();
 
   void emitPosition(Duration p) {
     _pos = p;
     _positionController.add(p);
+  }
+
+  void emitSpeed(double s) {
+    _speed = s;
+    speedController.add(s);
   }
 
   @override
@@ -55,17 +63,29 @@ class _FakePlayback implements PlaybackController {
   }
 
   @override
+  Future<void> setSpeed(double speed) async {
+    _speed = speed;
+    lastSetSpeed = speed;
+    speedController.add(speed);
+  }
+
+  @override
   Duration get position => _pos;
   @override
   bool get playing => _playing;
+  @override
+  double get speed => _speed;
   @override
   Stream<Duration> get positionStream => _positionController.stream;
   @override
   Stream<bool> get playingStream => _playingController.stream;
   @override
+  Stream<double> get speedStream => speedController.stream;
+  @override
   Future<void> dispose() async {
     await _positionController.close();
     await _playingController.close();
+    await speedController.close();
   }
 }
 
@@ -210,15 +230,26 @@ void main() {
 
 class _StreamingFakePlayback implements PlaybackController {
   final _playingController = StreamController<bool>.broadcast();
+  final speedController = StreamController<double>.broadcast();
   Duration _pos = Duration.zero;
   bool _playing = false;
+  double _speed = 1.0;
+  double? lastSetSpeed;
 
   void emitPlaying(bool value) {
     _playing = value;
     _playingController.add(value);
   }
 
-  Future<void> close() => _playingController.close();
+  void emitSpeed(double s) {
+    _speed = s;
+    speedController.add(s);
+  }
+
+  Future<void> close() async {
+    await _playingController.close();
+    await speedController.close();
+  }
 
   @override
   Future<void> setSource(String path) async {}
@@ -229,13 +260,23 @@ class _StreamingFakePlayback implements PlaybackController {
   @override
   Future<void> seek(Duration position) async => _pos = position;
   @override
+  Future<void> setSpeed(double speed) async {
+    _speed = speed;
+    lastSetSpeed = speed;
+    speedController.add(speed);
+  }
+  @override
   Duration get position => _pos;
   @override
   bool get playing => _playing;
   @override
+  double get speed => _speed;
+  @override
   Stream<Duration> get positionStream => const Stream.empty();
   @override
   Stream<bool> get playingStream => _playingController.stream;
+  @override
+  Stream<double> get speedStream => speedController.stream;
   @override
   Future<void> dispose() async {}
 }

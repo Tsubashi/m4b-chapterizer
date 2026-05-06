@@ -40,13 +40,19 @@ class _NullPlayback implements PlaybackController {
   @override
   Future<void> seek(Duration position) async {}
   @override
+  Future<void> setSpeed(double speed) async {}
+  @override
   Duration get position => Duration.zero;
   @override
   bool get playing => false;
   @override
+  double get speed => 1.0;
+  @override
   Stream<Duration> get positionStream => const Stream.empty();
   @override
   Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Stream<double> get speedStream => const Stream.empty();
   @override
   Future<void> dispose() async {}
 }
@@ -66,13 +72,19 @@ class _RecordingPlayback implements PlaybackController {
     currentPosition = position;
   }
   @override
+  Future<void> setSpeed(double speed) async {}
+  @override
   Duration get position => currentPosition;
   @override
   bool get playing => false;
   @override
+  double get speed => 1.0;
+  @override
   Stream<Duration> get positionStream => const Stream.empty();
   @override
   Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Stream<double> get speedStream => const Stream.empty();
   @override
   Future<void> dispose() async {}
 }

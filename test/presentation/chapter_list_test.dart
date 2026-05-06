@@ -31,14 +31,20 @@ class _RecordingPlayback implements PlaybackController {
     seeks.add(position);
   }
   @override
+  Future<void> setSpeed(double speed) async {}
+  @override
   Duration get position => _position;
   set position(Duration value) => _position = value;
   @override
   bool get playing => false;
   @override
+  double get speed => 1.0;
+  @override
   Stream<Duration> get positionStream => const Stream.empty();
   @override
   Stream<bool> get playingStream => const Stream.empty();
+  @override
+  Stream<double> get speedStream => const Stream.empty();
   @override
   Future<void> dispose() async {}
 }

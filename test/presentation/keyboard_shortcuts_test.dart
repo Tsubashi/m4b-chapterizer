@@ -138,9 +138,12 @@ class _StubChannel implements DragDropChannel {
 class _FakePlayback implements PlaybackController {
   final positionController = StreamController<Duration>.broadcast();
   final playingController = StreamController<bool>.broadcast();
+  final speedController = StreamController<double>.broadcast();
   final List<Duration> seeks = [];
   Duration _pos = Duration.zero;
   bool _playing = false;
+  double _speed = 1.0;
+  double? lastSetSpeed;
 
   @override
   Future<void> setSource(String path) async {}
@@ -160,21 +163,36 @@ class _FakePlayback implements PlaybackController {
     seeks.add(position);
   }
   @override
+  Future<void> setSpeed(double speed) async {
+    _speed = speed;
+    lastSetSpeed = speed;
+    speedController.add(speed);
+  }
+  @override
   Duration get position => _pos;
   void setPosition(Duration p) {
     _pos = p;
     positionController.add(p);
   }
+  void emitSpeed(double s) {
+    _speed = s;
+    speedController.add(s);
+  }
   @override
   bool get playing => _playing;
+  @override
+  double get speed => _speed;
   @override
   Stream<Duration> get positionStream => positionController.stream;
   @override
   Stream<bool> get playingStream => playingController.stream;
   @override
+  Stream<double> get speedStream => speedController.stream;
+  @override
   Future<void> dispose() async {
     await positionController.close();
     await playingController.close();
+    await speedController.close();
   }
 }
 
