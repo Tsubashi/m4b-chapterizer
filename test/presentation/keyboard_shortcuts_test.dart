@@ -93,6 +93,31 @@ void main() {
         RedoIntent,
       ]));
     });
+
+    test('maps Cmd+] to StepSpeedIntent(+1) and Cmd+[ to StepSpeedIntent(-1)',
+        () {
+      final map = editorShortcuts();
+      final stepUp = map.entries.firstWhere(
+        (e) => e.value is StepSpeedIntent &&
+            (e.value as StepSpeedIntent).direction == 1,
+      );
+      final stepDown = map.entries.firstWhere(
+        (e) => e.value is StepSpeedIntent &&
+            (e.value as StepSpeedIntent).direction == -1,
+      );
+      expect((stepUp.key as SingleActivator).trigger,
+          LogicalKeyboardKey.bracketRight);
+      expect((stepDown.key as SingleActivator).trigger,
+          LogicalKeyboardKey.bracketLeft);
+    });
+
+    test('maps Cmd+\\ to ResetSpeedIntent', () {
+      final map = editorShortcuts();
+      final entry =
+          map.entries.firstWhere((e) => e.value is ResetSpeedIntent);
+      expect((entry.key as SingleActivator).trigger,
+          LogicalKeyboardKey.backslash);
+    });
   });
 
   _registerWidgetTests();
@@ -762,6 +787,71 @@ void _registerWidgetTests() {
         final startNodes =
             h.container.read(chapterStartFocusNodesProvider);
         expect(FocusManager.instance.primaryFocus, startNodes[1]);
+      });
+    });
+
+    group('Speed shortcuts', () {
+      testWidgets('Cmd+] steps speed up from 1× to 1.25×', (tester) async {
+        final h = await _pumpEditor(tester);
+        // Default _FakePlayback speed is 1.0.
+        await _sendCmdKey(tester, LogicalKeyboardKey.bracketRight);
+        expect(h.playback.lastSetSpeed, 1.25);
+      });
+
+      testWidgets('Cmd+[ steps speed down from 1× to 0.75×',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await _sendCmdKey(tester, LogicalKeyboardKey.bracketLeft);
+        expect(h.playback.lastSetSpeed, 0.75);
+      });
+
+      testWidgets('Cmd+] at maximum is a no-op', (tester) async {
+        final h = await _pumpEditor(tester);
+        h.playback.emitSpeed(3.0);
+        await tester.pump();
+        h.playback.lastSetSpeed = null;
+
+        await _sendCmdKey(tester, LogicalKeyboardKey.bracketRight);
+        expect(h.playback.lastSetSpeed, isNull);
+      });
+
+      testWidgets('Cmd+[ at minimum is a no-op', (tester) async {
+        final h = await _pumpEditor(tester);
+        h.playback.emitSpeed(0.5);
+        await tester.pump();
+        h.playback.lastSetSpeed = null;
+
+        await _sendCmdKey(tester, LogicalKeyboardKey.bracketLeft);
+        expect(h.playback.lastSetSpeed, isNull);
+      });
+
+      testWidgets('Cmd+\\ resets speed to 1×', (tester) async {
+        final h = await _pumpEditor(tester);
+        h.playback.emitSpeed(2.0);
+        await tester.pump();
+        h.playback.lastSetSpeed = null;
+
+        await _sendCmdKey(tester, LogicalKeyboardKey.backslash);
+        expect(h.playback.lastSetSpeed, 1.0);
+      });
+
+      testWidgets('Cmd+\\ at 1× is a no-op', (tester) async {
+        final h = await _pumpEditor(tester);
+        h.playback.lastSetSpeed = null;
+
+        await _sendCmdKey(tester, LogicalKeyboardKey.backslash);
+        expect(h.playback.lastSetSpeed, isNull);
+      });
+
+      testWidgets(
+          'speed shortcuts work while a TextField is focused',
+          (tester) async {
+        final h = await _pumpEditor(tester);
+        await tester.tap(find.byKey(const ValueKey('chapters.title.0')));
+        await tester.pump();
+
+        await _sendCmdKey(tester, LogicalKeyboardKey.bracketRight);
+        expect(h.playback.lastSetSpeed, 1.25);
       });
     });
   });

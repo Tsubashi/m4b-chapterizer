@@ -13,6 +13,7 @@ import '../widgets/chapter_list.dart'
         chapterStartFocusNodesProvider,
         chapterTitleFocusNodesProvider,
         selectedChapterProvider;
+import '../widgets/speed_button.dart' show kDefaultSpeed, nextSpeedPreset;
 import 'editor_actions.dart';
 
 class PlayPauseIntent extends Intent {
@@ -69,6 +70,15 @@ class RedoIntent extends Intent {
   const RedoIntent();
 }
 
+class StepSpeedIntent extends Intent {
+  const StepSpeedIntent(this.direction);
+  final int direction; // +1 step up, -1 step down
+}
+
+class ResetSpeedIntent extends Intent {
+  const ResetSpeedIntent();
+}
+
 /// Returns the editor's full keyboard shortcut map, with platform-correct
 /// modifiers (`⌘` on macOS, `Ctrl` elsewhere).
 Map<ShortcutActivator, Intent> editorShortcuts() {
@@ -107,6 +117,9 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
     cmd(LogicalKeyboardKey.keyB): const SetChapterToPlayheadIntent(),
     cmd(LogicalKeyboardKey.keyZ): const UndoIntent(),
     cmd(LogicalKeyboardKey.keyZ, shift: true): const RedoIntent(),
+    cmd(LogicalKeyboardKey.bracketRight): const StepSpeedIntent(1),
+    cmd(LogicalKeyboardKey.bracketLeft): const StepSpeedIntent(-1),
+    cmd(LogicalKeyboardKey.backslash): const ResetSpeedIntent(),
   };
 }
 
@@ -406,6 +419,22 @@ class _EditorShortcutsState extends ConsumerState<EditorShortcuts> {
           RedoIntent: CallbackAction<RedoIntent>(onInvoke: (_) {
             if (_isEditableTextFocused()) return null;
             ref.read(editorProvider.notifier).redo();
+            return null;
+          }),
+          StepSpeedIntent: CallbackAction<StepSpeedIntent>(onInvoke: (intent) {
+            final controller = ref.read(playbackControllerProvider);
+            final next = nextSpeedPreset(
+              controller.speed,
+              direction: intent.direction,
+            );
+            if (next != controller.speed) controller.setSpeed(next);
+            return null;
+          }),
+          ResetSpeedIntent: CallbackAction<ResetSpeedIntent>(onInvoke: (_) {
+            final controller = ref.read(playbackControllerProvider);
+            if (controller.speed != kDefaultSpeed) {
+              controller.setSpeed(kDefaultSpeed);
+            }
             return null;
           }),
         },
