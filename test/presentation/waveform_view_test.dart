@@ -754,5 +754,43 @@ void main() {
         closeTo(3100, 100),
       );
     });
+
+    testWidgets('speed change resets the extrapolation baseline',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      // Play from 0 at 1× for 100 ms — the existing extrapolation
+      // advances windowStart slightly while clamping to the start of
+      // the file (since the playhead is below the 25% follow anchor).
+      playback.emitPosition(Duration.zero);
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Now flip to 2× WITHOUT emitting a new position. The fake's
+      // controller.position returns whatever _pos was last set to
+      // (Duration.zero from emitPosition above), so the new baseline
+      // re-anchors at (0 s, now). 50 ms of wall-clock at 2.0× should
+      // advance the smoothed playhead by 100 ms of audio. With the
+      // baseline reset, this lands well below the 2 s anchor offset
+      // — without it, the jump would multiply the prior 100 ms of
+      // accumulated wall-clock by the new 2.0× factor on the very next
+      // tick, pushing windowStart far further forward.
+      playback.emitSpeed(2.0);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+
+      // The fix means windowStart stays well under any value that would
+      // result from retroactively scaling the pre-change interval.
+      // Permissive monotonic check: not a leap into the seconds-range.
+      final windowStart = container
+          .read(waveformViewportProvider)
+          .windowStart
+          .inMilliseconds;
+      expect(windowStart, lessThan(2000),
+          reason: 'baseline reset should prevent retroactive 2× scaling');
+    });
   });
 }

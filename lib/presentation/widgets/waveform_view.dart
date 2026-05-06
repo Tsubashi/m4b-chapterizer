@@ -26,6 +26,7 @@ class _WaveformViewState extends ConsumerState<WaveformView>
     with SingleTickerProviderStateMixin {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<double>? _speedSub;
   late final Ticker _ticker;
 
   Duration _latestTotalDuration = Duration.zero;
@@ -54,12 +55,11 @@ class _WaveformViewState extends ConsumerState<WaveformView>
   static const Duration _extrapolationBudget = Duration(milliseconds: 1000);
 
   /// Multiplier applied to wall-clock delta when extrapolating between
-  /// position-stream emissions. Today the player runs at fixed 1.0×;
-  /// when a rate UI lands, replace this with a read from
-  /// PlaybackController.speed (and consider subscribing to a
-  /// speedStream to reset the baseline on rate changes — without that,
-  /// drift after a rate change is bounded to one stream interval).
-  double _currentPlaybackSpeed() => 1.0;
+  /// position-stream emissions. Reads PlaybackController.speed live so
+  /// the speed control's setSpeed call is reflected on the next Ticker
+  /// tick.
+  double _currentPlaybackSpeed() =>
+      ref.read(playbackControllerProvider).speed;
 
   @override
   void initState() {
@@ -72,6 +72,7 @@ class _WaveformViewState extends ConsumerState<WaveformView>
 
     _positionSub = controller.positionStream.listen(_onPosition);
     _playingSub = controller.playingStream.listen(_onPlayingChange);
+    _speedSub = controller.speedStream.listen(_onSpeedChange);
 
     _ticker = createTicker(_onTick);
     if (_isPlaying) _ticker.start();
@@ -82,6 +83,7 @@ class _WaveformViewState extends ConsumerState<WaveformView>
     _ticker.dispose();
     _positionSub?.cancel();
     _playingSub?.cancel();
+    _speedSub?.cancel();
     super.dispose();
   }
 
@@ -135,6 +137,17 @@ class _WaveformViewState extends ConsumerState<WaveformView>
     } else {
       _ticker.stop();
     }
+  }
+
+  void _onSpeedChange(double newSpeed) {
+    if (!mounted) return;
+    // The new speed only applies to wall-clock time strictly after the
+    // change. Re-read controller.position and restamp the wall-clock
+    // baseline so the next Ticker tick computes a small delta scaled
+    // by the new speed, not the entire pre-change interval scaled by it.
+    final controller = ref.read(playbackControllerProvider);
+    _basePosition = controller.position;
+    _baseWallClock = clock.now();
   }
 
   void _onTick(Duration tickerElapsed) {
