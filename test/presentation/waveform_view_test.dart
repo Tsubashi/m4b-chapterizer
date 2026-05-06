@@ -584,4 +584,156 @@ void main() {
       expect(queriedKeys.map((k) => k.tileIndex).toSet(), equals({0}));
     });
   });
+
+  group('Smooth playback scroll', () {
+    testWidgets('paused: in-window position emission does not move viewport',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      // Default: paused, viewport [0, 8 s]. 5 s is inside.
+      expect(playback.playing, isFalse);
+      playback.emitPosition(const Duration(seconds: 5));
+      await tester.pump();
+
+      expect(
+        container.read(waveformViewportProvider).windowStart,
+        Duration.zero,
+      );
+    });
+
+    testWidgets(
+        'paused: out-of-window position emission re-anchors immediately',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      playback.emitPosition(const Duration(seconds: 30));
+      await tester.pump();
+
+      // followPlayhead at 25% of 8 s window: windowStart = 30 − 2 = 28 s.
+      expect(
+        container
+            .read(waveformViewportProvider)
+            .windowStart
+            .inMilliseconds,
+        closeTo(28000, 50),
+      );
+    });
+
+    testWidgets('windowStart advances continuously while playing',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      // Set baseline at 5 s, then start playback.
+      playback.emitPosition(const Duration(seconds: 5));
+      playback.emitPlaying(true);
+      await tester.pump();
+
+      // Advance Flutter's scheduler by 500 ms. The Ticker callback
+      // sees its elapsed advance accordingly and interpolates.
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // Expected: interpolated playhead = 5 s + 500 ms = 5.5 s.
+      // followPlayhead anchors at 25% of 8 s window:
+      // windowStart = 5500 − 2000 = 3500 ms.
+      expect(
+        container
+            .read(waveformViewportProvider)
+            .windowStart
+            .inMilliseconds,
+        closeTo(3500, 50),
+      );
+    });
+
+    testWidgets('pausing stops extrapolation', (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      playback.emitPosition(const Duration(seconds: 5));
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Note where the viewport is right before pausing.
+      final stoppedAt =
+          container.read(waveformViewportProvider).windowStart;
+
+      playback.emitPlaying(false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      // No further extrapolation after pause.
+      expect(
+        container.read(waveformViewportProvider).windowStart,
+        stoppedAt,
+      );
+    });
+
+    testWidgets('seek mid-playback resets the extrapolation baseline',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      playback.emitPosition(Duration.zero);
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Seek to 30 s mid-playback. The next Ticker pump should base
+      // its extrapolation on the new emission, not continue from
+      // the old baseline.
+      playback.emitPosition(const Duration(seconds: 30));
+      await tester.pump();
+
+      // followPlayhead anchors the new playhead at 25% from left:
+      // windowStart ≈ 30 − 2 = 28 s. Allow a frame of extrapolation
+      // beyond the seek (a few ms at most).
+      expect(
+        container
+            .read(waveformViewportProvider)
+            .windowStart
+            .inMilliseconds,
+        closeTo(28000, 100),
+      );
+    });
+
+    testWidgets('resuming play after pause resyncs to controller.position',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+      final container = await _pump(tester, playback: playback);
+
+      // Play from 5 s briefly, pause; viewport advances during the
+      // play interval.
+      playback.emitPosition(const Duration(seconds: 5));
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      playback.emitPlaying(false);
+      await tester.pump();
+
+      // The fake's `_pos` was last set when emitPosition fired (5 s).
+      // controller.position therefore returns 5 s. After resuming,
+      // the new baseline is 5 s, and 100 ms later the viewport
+      // should be windowStart ≈ 5100 − 2000 = 3100 ms.
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        container
+            .read(waveformViewportProvider)
+            .windowStart
+            .inMilliseconds,
+        closeTo(3100, 100),
+      );
+    });
+  });
 }

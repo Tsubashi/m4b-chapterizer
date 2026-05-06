@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:clock/clock.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,48 +22,86 @@ class WaveformView extends ConsumerStatefulWidget {
   ConsumerState<WaveformView> createState() => _WaveformViewState();
 }
 
-class _WaveformViewState extends ConsumerState<WaveformView> {
+class _WaveformViewState extends ConsumerState<WaveformView>
+    with SingleTickerProviderStateMixin {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<bool>? _playingSub;
+  late final Ticker _ticker;
+
   Duration _latestTotalDuration = Duration.zero;
   double _latestViewportWidth = 0;
+
   WaveformTilePeaks? _lastTile;
   bool _isPlaying = false;
+
+  // Extrapolation baseline. _basePosition is the most recent value the
+  // playback stream reported; _baseWallClock is the wall-clock time at
+  // that moment (read via package:clock so fake_async advances it in
+  // tests). The Ticker drives per-frame repaints; the actual delta we
+  // extrapolate by is the wall-clock delta, scaled by playback speed.
+  Duration _basePosition = Duration.zero;
+  DateTime _baseWallClock = DateTime.fromMicrosecondsSinceEpoch(0);
+
+  // What the painter actually consumes for the playhead line.
+  Duration _smoothedPlayhead = Duration.zero;
+
+  // The position stream emits at ~5 Hz, so each baseline is only
+  // useful for ~200 ms of extrapolation. If we go significantly past
+  // that without a fresh emission, stop ticking — there's no
+  // meaningful new information to extrapolate to and a runaway
+  // Ticker prevents `pumpAndSettle` from terminating in tests. The
+  // next position emission re-arms the Ticker via _onPosition.
+  static const Duration _extrapolationBudget = Duration(milliseconds: 1000);
+
+  /// Multiplier applied to wall-clock delta when extrapolating between
+  /// position-stream emissions. Today the player runs at fixed 1.0×;
+  /// when a rate UI lands, replace this with a read from
+  /// PlaybackController.speed (and consider subscribing to a
+  /// speedStream to reset the baseline on rate changes — without that,
+  /// drift after a rate change is bounded to one stream interval).
+  double _currentPlaybackSpeed() => 1.0;
 
   @override
   void initState() {
     super.initState();
     final controller = ref.read(playbackControllerProvider);
     _isPlaying = controller.playing;
+    _basePosition = controller.position;
+    _baseWallClock = clock.now();
+    _smoothedPlayhead = controller.position;
+
     _positionSub = controller.positionStream.listen(_onPosition);
-    _playingSub = controller.playingStream.listen((playing) {
-      if (!mounted) return;
-      if (_isPlaying != playing) {
-        setState(() => _isPlaying = playing);
-      }
-    });
+    _playingSub = controller.playingStream.listen(_onPlayingChange);
+
+    _ticker = createTicker(_onTick);
+    if (_isPlaying) _ticker.start();
   }
 
   @override
   void dispose() {
+    _ticker.dispose();
     _positionSub?.cancel();
     _playingSub?.cancel();
     super.dispose();
   }
 
   void _onPosition(Duration playhead) {
-    if (_latestTotalDuration <= Duration.zero ||
-        _latestViewportWidth <= 0) {
+    // Always reset the extrapolation baseline.
+    _basePosition = playhead;
+    _baseWallClock = clock.now();
+
+    if (_isPlaying) {
+      // Re-arm the Ticker: it may have stopped itself if too much
+      // time passed without a stream emission (see _onTick).
+      if (!_ticker.isActive) _ticker.start();
       return;
     }
-    final controller = ref.read(playbackControllerProvider);
-    final notifier = ref.read(waveformViewportProvider.notifier);
-    if (controller.playing) {
-      notifier.followPlayhead(
-        playhead,
-        _latestTotalDuration,
-        _latestViewportWidth,
-      );
+
+    // Paused: drive the painter directly from the stream value, and
+    // run the existing ensure-visible logic.
+    if (_latestTotalDuration <= Duration.zero ||
+        _latestViewportWidth <= 0) {
+      setState(() => _smoothedPlayhead = playhead);
       return;
     }
     final viewport = ref.read(waveformViewportProvider);
@@ -70,12 +110,67 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
     final windowEnd =
         viewport.windowStart + Duration(microseconds: windowMicros);
     if (playhead < viewport.windowStart || playhead > windowEnd) {
-      notifier.followPlayhead(
-        playhead,
-        _latestTotalDuration,
-        _latestViewportWidth,
-      );
+      ref.read(waveformViewportProvider.notifier).followPlayhead(
+            playhead,
+            _latestTotalDuration,
+            _latestViewportWidth,
+          );
     }
+    setState(() => _smoothedPlayhead = playhead);
+  }
+
+  void _onPlayingChange(bool playing) {
+    if (!mounted || _isPlaying == playing) return;
+    final controller = ref.read(playbackControllerProvider);
+    _basePosition = controller.position;
+    // Reset the wall-clock baseline so the first post-resume delta
+    // is 0, not whatever wall time elapsed while paused.
+    _baseWallClock = clock.now();
+    setState(() {
+      _isPlaying = playing;
+      _smoothedPlayhead = _basePosition;
+    });
+    if (playing) {
+      _ticker.start();
+    } else {
+      _ticker.stop();
+    }
+  }
+
+  void _onTick(Duration tickerElapsed) {
+    if (!mounted) return;
+
+    final wallDelta = clock.now().difference(_baseWallClock);
+
+    // If we've been extrapolating without a fresh stream emission for
+    // longer than the budget, stop the Ticker. The next emission will
+    // restart it. This bounds drift and lets `pumpAndSettle` settle
+    // when nothing else is keeping the frame loop alive.
+    if (wallDelta >= _extrapolationBudget) {
+      _ticker.stop();
+      return;
+    }
+
+    final speedScaledMicros =
+        (wallDelta.inMicroseconds * _currentPlaybackSpeed()).round();
+    final interpolated =
+        _basePosition + Duration(microseconds: speedScaledMicros);
+    final clampedMicros = interpolated.inMicroseconds
+        .clamp(0, _latestTotalDuration.inMicroseconds);
+    final clamped = Duration(microseconds: clampedMicros);
+
+    if (_latestTotalDuration <= Duration.zero ||
+        _latestViewportWidth <= 0) {
+      setState(() => _smoothedPlayhead = clamped);
+      return;
+    }
+
+    ref.read(waveformViewportProvider.notifier).followPlayhead(
+          clamped,
+          _latestTotalDuration,
+          _latestViewportWidth,
+        );
+    setState(() => _smoothedPlayhead = clamped);
   }
 
   /// True if `tile`'s `[tileStart, tileStart + tileDuration)` intersects
@@ -144,8 +239,6 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
         );
         final tileAsync = ref.watch(zoomedWaveformPeaksProvider(tileKey));
 
-        // Capture the freshly-resolved tile so we can keep painting
-        // through subsequent loads.
         if (tileAsync.hasValue) {
           final resolved = tileAsync.value!;
           if (resolved.tileDuration > Duration.zero) {
@@ -153,8 +246,6 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
           }
         }
 
-        // Prefetch the next tile only while playing — pan/zoom while
-        // paused is user-driven and we can't predict direction.
         if (_isPlaying) {
           final nextTileKey = WaveformTileKey(
             path: path,
@@ -165,8 +256,6 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
           ref.watch(zoomedWaveformPeaksProvider(nextTileKey));
         }
 
-        // What the painter actually draws from: live tile if loaded,
-        // otherwise the last good tile, otherwise empty.
         final liveTile = tileAsync.maybeWhen(
           data: (t) => t,
           orElse: () => null,
@@ -191,92 +280,84 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
         return Stack(
           children: [
             Positioned.fill(
-              child: StreamBuilder<Duration>(
-                stream: controller.positionStream,
-                initialData: controller.position,
-                builder: (context, snapshot) {
-                  final playhead =
-                      snapshot.data ?? controller.position;
-                  return Listener(
-                    // coverage:ignore-start
-                    onPointerSignal: (event) {
-                      if (event is! PointerScrollEvent) return;
-                      if (!_isZoomModifierHeld()) return;
-                      final factor = -event.scrollDelta.dy * 0.005;
-                      final newPxPerSec = viewport.pixelsPerSecond *
-                          (factor.isFinite ? math.exp(factor) : 1.0);
-                      final cursorTime = _timeAt(
-                        event.localPosition.dx,
-                        width,
-                        viewport,
-                      );
-                      viewportNotifier.zoomTo(
-                        newPxPerSec,
-                        cursorTime,
-                        book.totalDuration,
-                        width,
-                      );
-                    },
-                    onPointerPanZoomStart: (event) {},
-                    onPointerPanZoomUpdate: (event) {
-                      if (!_isZoomModifierHeld()) return;
-                      if (event.scale == 1.0) return;
-                      final newPxPerSec =
-                          viewport.pixelsPerSecond * event.scale;
-                      final cursorTime = _timeAt(
-                        event.localPosition.dx,
-                        width,
-                        viewport,
-                      );
-                      viewportNotifier.zoomTo(
-                        newPxPerSec,
-                        cursorTime,
-                        book.totalDuration,
-                        width,
-                      );
-                    },
-                    // coverage:ignore-end
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      dragStartBehavior: DragStartBehavior.down,
-                      onTapUp: (details) => _onTap(
-                        details.localPosition.dx,
-                        width,
-                        book.totalDuration,
-                        controller,
-                      ),
-                      onHorizontalDragUpdate: (details) {
-                        if (controller.playing) return;
-                        viewportNotifier.panBy(
-                          -details.delta.dx,
-                          book.totalDuration,
-                          width,
-                        );
-                      },
-                      child: CustomPaint(
-                        size: Size(width, WaveformView.height),
-                        painter: _WaveformPainter(
-                          tile: effectiveTile,
-                          windowStart: viewport.windowStart,
-                          pixelsPerSecond: viewport.pixelsPerSecond,
-                          playhead: playhead,
-                          chapterStarts: [
-                            for (final c in book.chapters) c.start
-                          ],
-                          playedColor:
-                              Theme.of(context).colorScheme.primary,
-                          unplayedColor: Theme.of(context)
-                              .colorScheme
-                              .outlineVariant,
-                          tickColor:
-                              Theme.of(context).colorScheme.outline,
-                          playheadColor:
-                              Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ),
+              child: Listener(
+                // coverage:ignore-start
+                onPointerSignal: (event) {
+                  if (event is! PointerScrollEvent) return;
+                  if (!_isZoomModifierHeld()) return;
+                  final factor = -event.scrollDelta.dy * 0.005;
+                  final newPxPerSec = viewport.pixelsPerSecond *
+                      (factor.isFinite ? math.exp(factor) : 1.0);
+                  final cursorTime = _timeAt(
+                    event.localPosition.dx,
+                    width,
+                    viewport,
+                  );
+                  viewportNotifier.zoomTo(
+                    newPxPerSec,
+                    cursorTime,
+                    book.totalDuration,
+                    width,
                   );
                 },
+                onPointerPanZoomStart: (event) {},
+                onPointerPanZoomUpdate: (event) {
+                  if (!_isZoomModifierHeld()) return;
+                  if (event.scale == 1.0) return;
+                  final newPxPerSec =
+                      viewport.pixelsPerSecond * event.scale;
+                  final cursorTime = _timeAt(
+                    event.localPosition.dx,
+                    width,
+                    viewport,
+                  );
+                  viewportNotifier.zoomTo(
+                    newPxPerSec,
+                    cursorTime,
+                    book.totalDuration,
+                    width,
+                  );
+                },
+                // coverage:ignore-end
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  dragStartBehavior: DragStartBehavior.down,
+                  onTapUp: (details) => _onTap(
+                    details.localPosition.dx,
+                    width,
+                    book.totalDuration,
+                    controller,
+                  ),
+                  onHorizontalDragUpdate: (details) {
+                    if (controller.playing) return;
+                    viewportNotifier.panBy(
+                      -details.delta.dx,
+                      book.totalDuration,
+                      width,
+                    );
+                  },
+                  child: CustomPaint(
+                    size: Size(width, WaveformView.height),
+                    painter: _WaveformPainter(
+                      tile: effectiveTile,
+                      windowStart: viewport.windowStart,
+                      pixelsPerSecond: viewport.pixelsPerSecond,
+                      playhead: _smoothedPlayhead,
+                      chapterStarts: [
+                        for (final c in book.chapters) c.start
+                      ],
+                      playedColor:
+                          Theme.of(context).colorScheme.primary,
+                      unplayedColor: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant,
+                      tickColor:
+                          Theme.of(context).colorScheme.outline,
+                      playheadColor:
+                          Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
               ),
             ),
             if (showLoading)
