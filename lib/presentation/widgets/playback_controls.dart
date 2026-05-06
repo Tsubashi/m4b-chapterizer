@@ -6,6 +6,7 @@ import '../providers/editor_state.dart';
 import '../providers/playback.dart';
 import '../util/duration_format.dart';
 import 'chapter_scrubber.dart';
+import 'speed_button.dart';
 import 'waveform_view.dart';
 
 class PlaybackControls extends ConsumerWidget {
@@ -63,6 +64,8 @@ class PlaybackControls extends ConsumerWidget {
                   );
                 },
               ),
+              const SizedBox(width: 12),
+              const SpeedButton(),
               const Spacer(),
               Row(
                 mainAxisSize: MainAxisSize.min,

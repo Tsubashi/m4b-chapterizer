@@ -1,3 +1,8 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../providers/playback.dart';
+
 /// Speed values offered by the SpeedButton's preset menu and reachable
 /// via the Cmd+]/Cmd+[ keyboard shortcuts.
 const List<double> kSpeedPresets = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
@@ -18,9 +23,7 @@ String formatSpeed(double speed) {
 
 /// Returns the preset reached by stepping from the closest preset to
 /// [current] by [direction] (+1 forward, -1 backward), clamped to the
-/// ends of [kSpeedPresets]. The closest-preset snap handles
-/// floating-point drift from `just_audio.setSpeed` so that
-/// `Cmd+]` always lands on a clean preset value.
+/// ends of [kSpeedPresets].
 double nextSpeedPreset(double current, {required int direction}) {
   final closestIdx = _closestPresetIndex(current);
   final newIdx =
@@ -39,4 +42,37 @@ int _closestPresetIndex(double speed) {
     }
   }
   return bestIdx;
+}
+
+class SpeedButton extends ConsumerWidget {
+  const SpeedButton({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final controller = ref.watch(playbackControllerProvider);
+    return StreamBuilder<double>(
+      stream: controller.speedStream,
+      initialData: controller.speed,
+      builder: (context, snapshot) {
+        final speed = snapshot.data ?? controller.speed;
+        return MenuAnchor(
+          builder: (context, menuController, _) => TextButton(
+            key: const ValueKey('playback.speed'),
+            onPressed: () => menuController.isOpen
+                ? menuController.close()
+                : menuController.open(),
+            child: Text(formatSpeed(speed)),
+          ),
+          menuChildren: [
+            for (final preset in kSpeedPresets)
+              MenuItemButton(
+                key: ValueKey('playback.speed.$preset'),
+                onPressed: () => controller.setSpeed(preset),
+                child: Text(formatSpeed(preset)),
+              ),
+          ],
+        );
+      },
+    );
+  }
 }

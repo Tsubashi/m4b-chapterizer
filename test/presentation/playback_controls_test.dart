@@ -10,6 +10,7 @@ import 'package:m4b_chapterizer/presentation/providers/editor_state.dart';
 import 'package:m4b_chapterizer/presentation/providers/playback.dart';
 import 'package:m4b_chapterizer/presentation/widgets/chapter_scrubber.dart';
 import 'package:m4b_chapterizer/presentation/widgets/playback_controls.dart';
+import 'package:m4b_chapterizer/presentation/widgets/speed_button.dart';
 import 'package:m4b_chapterizer/presentation/widgets/waveform_view.dart';
 
 class _StubBookbinder implements Bookbinder {
@@ -225,6 +226,27 @@ void main() {
     final waveformTop = tester.getTopLeft(find.byType(WaveformView)).dy;
     final scrubberTop = tester.getTopLeft(find.byType(ChapterScrubber)).dy;
     expect(waveformTop, lessThan(scrubberTop));
+  });
+
+  testWidgets('renders SpeedButton when an audiobook is loaded',
+      (tester) async {
+    final fake = _StubBookbinder();
+    final fakePlayback = _FakePlayback();
+    addTearDown(fakePlayback.dispose);
+    final container = ProviderContainer(
+      overrides: [
+        bookbinderProvider.overrideWithValue(fake),
+        playbackControllerProvider.overrideWithValue(fakePlayback),
+      ],
+    );
+    await container.read(editorProvider.notifier).open('/tmp/x.m4b');
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: Scaffold(body: PlaybackControls())),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SpeedButton), findsOneWidget);
   });
 }
 
