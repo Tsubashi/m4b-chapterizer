@@ -42,14 +42,14 @@ void main() {
       expect((right as ScrubIntent).delta, const Duration(seconds: 5));
     });
 
-    test('maps Shift+ArrowLeft and Shift+ArrowRight to ±30s', () {
+    test('maps Shift+ArrowLeft and Shift+ArrowRight to ±1s', () {
       final map = editorShortcuts();
       final shiftLeft =
           map[const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true)];
       final shiftRight = map[
           const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true)];
-      expect((shiftLeft as ScrubIntent).delta, const Duration(seconds: -30));
-      expect((shiftRight as ScrubIntent).delta, const Duration(seconds: 30));
+      expect((shiftLeft as ScrubIntent).delta, const Duration(seconds: -1));
+      expect((shiftRight as ScrubIntent).delta, const Duration(seconds: 1));
     });
 
     test('maps ArrowUp/ArrowDown to MoveChapterSelectionIntent ±1', () {
@@ -271,16 +271,14 @@ void _registerWidgetTests() {
       expect(h.playback.seeks.last, const Duration(seconds: 25));
     });
 
-    testWidgets('Shift+ArrowRight scrubs 30 seconds forward, clamped',
-        (tester) async {
+    testWidgets('Shift+ArrowRight scrubs 1 second forward', (tester) async {
       final h = await _pumpEditor(tester);
-      h.playback.setPosition(const Duration(seconds: 25));
+      h.playback.setPosition(const Duration(seconds: 10));
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await tester.pump();
-      // Total = 30s; +30s would be 55s; clamped to 30s.
-      expect(h.playback.seeks.last, const Duration(seconds: 30));
+      expect(h.playback.seeks.last, const Duration(seconds: 11));
     });
 
     testWidgets('ArrowDown moves selection +1, clamped to length-1',

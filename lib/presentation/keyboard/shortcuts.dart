@@ -88,9 +88,9 @@ Map<ShortcutActivator, Intent> editorShortcuts() {
     const SingleActivator(LogicalKeyboardKey.arrowRight):
         const ScrubIntent(Duration(seconds: 5)),
     const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true):
-        const ScrubIntent(Duration(seconds: -30)),
+        const ScrubIntent(Duration(seconds: -1)),
     const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true):
-        const ScrubIntent(Duration(seconds: 30)),
+        const ScrubIntent(Duration(seconds: 1)),
     const SingleActivator(LogicalKeyboardKey.arrowUp):
         const MoveChapterSelectionIntent(-1),
     const SingleActivator(LogicalKeyboardKey.arrowDown):
