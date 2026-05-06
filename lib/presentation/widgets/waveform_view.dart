@@ -22,19 +22,30 @@ class WaveformView extends ConsumerStatefulWidget {
 
 class _WaveformViewState extends ConsumerState<WaveformView> {
   StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<bool>? _playingSub;
   Duration _latestTotalDuration = Duration.zero;
   double _latestViewportWidth = 0;
+  WaveformTilePeaks? _lastTile;
+  bool _isPlaying = false;
 
   @override
   void initState() {
     super.initState();
     final controller = ref.read(playbackControllerProvider);
+    _isPlaying = controller.playing;
     _positionSub = controller.positionStream.listen(_onPosition);
+    _playingSub = controller.playingStream.listen((playing) {
+      if (!mounted) return;
+      if (_isPlaying != playing) {
+        setState(() => _isPlaying = playing);
+      }
+    });
   }
 
   @override
   void dispose() {
     _positionSub?.cancel();
+    _playingSub?.cancel();
     super.dispose();
   }
 
@@ -67,12 +78,30 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
     }
   }
 
+  /// True if `tile`'s `[tileStart, tileStart + tileDuration)` intersects
+  /// the visible viewport `[windowStart, windowStart + windowDurationMicros)`.
+  bool _tileOverlapsViewport(
+    WaveformTilePeaks tile,
+    Duration windowStart,
+    int windowDurationMicros,
+  ) {
+    final tileStartMicros = tile.tileStart.inMicroseconds;
+    final tileEndMicros = tileStartMicros + tile.tileDuration.inMicroseconds;
+    final windowStartMicros = windowStart.inMicroseconds;
+    final windowEndMicros = windowStartMicros + windowDurationMicros;
+    return tileStartMicros < windowEndMicros &&
+        tileEndMicros > windowStartMicros;
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<String?>(
       editorProvider.select((s) => s.path),
       (previous, next) {
         if (next != null && next != previous) {
+          // Drop the previous file's tile so it can't bleed into the
+          // first frame of the new file.
+          _lastTile = null;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
             final book = ref.read(editorProvider).audiobook;
@@ -114,14 +143,50 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
           pixelsPerSecond: viewport.pixelsPerSecond,
         );
         final tileAsync = ref.watch(zoomedWaveformPeaksProvider(tileKey));
-        final tile = tileAsync.maybeWhen(
+
+        // Capture the freshly-resolved tile so we can keep painting
+        // through subsequent loads.
+        if (tileAsync.hasValue) {
+          final resolved = tileAsync.value!;
+          if (resolved.tileDuration > Duration.zero) {
+            _lastTile = resolved;
+          }
+        }
+
+        // Prefetch the next tile only while playing — pan/zoom while
+        // paused is user-driven and we can't predict direction.
+        if (_isPlaying) {
+          final nextTileKey = WaveformTileKey(
+            path: path,
+            tileIndex: tileIndex + 1,
+            viewportDurationMicros: viewportDurationMicros,
+            pixelsPerSecond: viewport.pixelsPerSecond,
+          );
+          ref.watch(zoomedWaveformPeaksProvider(nextTileKey));
+        }
+
+        // What the painter actually draws from: live tile if loaded,
+        // otherwise the last good tile, otherwise empty.
+        final liveTile = tileAsync.maybeWhen(
           data: (t) => t,
-          orElse: () => const WaveformTilePeaks(
-            tileStart: Duration.zero,
-            tileDuration: Duration.zero,
-            peaks: [],
-          ),
+          orElse: () => null,
         );
+        final effectiveTile = liveTile ??
+            _lastTile ??
+            const WaveformTilePeaks(
+              tileStart: Duration.zero,
+              tileDuration: Duration.zero,
+              peaks: [],
+            );
+
+        final fallbackOverlaps = liveTile == null &&
+            _lastTile != null &&
+            _tileOverlapsViewport(
+              _lastTile!,
+              viewport.windowStart,
+              viewportDurationMicros,
+            );
+        final showLoading = tileAsync.isLoading && !fallbackOverlaps;
 
         return Stack(
           children: [
@@ -130,7 +195,8 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                 stream: controller.positionStream,
                 initialData: controller.position,
                 builder: (context, snapshot) {
-                  final playhead = snapshot.data ?? controller.position;
+                  final playhead =
+                      snapshot.data ?? controller.position;
                   return Listener(
                     // coverage:ignore-start
                     onPointerSignal: (event) {
@@ -190,7 +256,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                       child: CustomPaint(
                         size: Size(width, WaveformView.height),
                         painter: _WaveformPainter(
-                          tile: tile,
+                          tile: effectiveTile,
                           windowStart: viewport.windowStart,
                           pixelsPerSecond: viewport.pixelsPerSecond,
                           playhead: playhead,
@@ -213,7 +279,7 @@ class _WaveformViewState extends ConsumerState<WaveformView> {
                 },
               ),
             ),
-            if (tileAsync.isLoading)
+            if (showLoading)
               Positioned.fill(
                 child: IgnorePointer(
                   child: Center(

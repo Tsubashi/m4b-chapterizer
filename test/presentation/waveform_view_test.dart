@@ -81,6 +81,7 @@ Future<ProviderContainer> _pump(
   required _FakePlayback playback,
   WaveformTilePeaks? tilePeaks,
   bool loading = false,
+  Future<WaveformTilePeaks> Function(WaveformTileKey key)? keyResolver,
 }) async {
   final canned = tilePeaks ??
       const WaveformTilePeaks(
@@ -92,11 +93,12 @@ Future<ProviderContainer> _pump(
     overrides: [
       bookbinderProvider.overrideWithValue(_StubBookbinder()),
       playbackControllerProvider.overrideWithValue(playback),
-      zoomedWaveformPeaksProvider.overrideWith(
-        (ref, key) => loading
+      zoomedWaveformPeaksProvider.overrideWith((ref, key) {
+        if (keyResolver != null) return keyResolver(key);
+        return loading
             ? Completer<WaveformTilePeaks>().future
-            : Future.value(canned),
-      ),
+            : Future.value(canned);
+      }),
     ],
   );
   addTearDown(container.dispose);
@@ -415,5 +417,171 @@ void main() {
       container.read(waveformViewportProvider).windowStart,
       pannedStart,
     );
+  });
+
+  group('Tile flicker elimination', () {
+    testWidgets(
+        'falls back to last loaded tile while current tile is loading',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+
+      // First lookup resolves with a 24 s wide tile starting at 0.
+      // Subsequent lookups (after pan triggers a new tileKey) never
+      // resolve. _lastTile should keep the painter drawing and hide
+      // the loading indicator because the old tile still overlaps.
+      var loadCount = 0;
+      final container = await _pump(
+        tester,
+        playback: playback,
+        keyResolver: (key) {
+          loadCount++;
+          if (loadCount == 1) {
+            return Future.value(const WaveformTilePeaks(
+              tileStart: Duration.zero,
+              tileDuration: Duration(seconds: 24),
+              peaks: [0.5, 0.5, 0.5],
+            ));
+          }
+          return Completer<WaveformTilePeaks>().future;
+        },
+      );
+
+      // Pan to windowStart = 8 s (800 px / 100 pxPerSec). Default
+      // viewportDuration = 8 s, so tileIndex flips 0 → 1, triggering
+      // a fresh family lookup that never resolves.
+      container.read(waveformViewportProvider.notifier).panBy(
+            800,
+            const Duration(seconds: 60),
+            800,
+          );
+      await tester.pump();
+
+      expect(find.text('Generating waveform…'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('shows loading when last tile no longer overlaps viewport',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+
+      var loadCount = 0;
+      final container = await _pump(
+        tester,
+        playback: playback,
+        keyResolver: (key) {
+          loadCount++;
+          if (loadCount == 1) {
+            return Future.value(const WaveformTilePeaks(
+              tileStart: Duration.zero,
+              tileDuration: Duration(seconds: 24),
+              peaks: [0.5, 0.5, 0.5],
+            ));
+          }
+          return Completer<WaveformTilePeaks>().future;
+        },
+      );
+
+      // Pan windowStart well past the old tile's end (24 s). 30 s is
+      // outside [0, 24), so _lastTile no longer covers the viewport.
+      // Loading indicator should appear.
+      container.read(waveformViewportProvider.notifier).panBy(
+            3000,
+            const Duration(seconds: 60),
+            800,
+          );
+      await tester.pump();
+
+      expect(find.text('Generating waveform…'), findsOneWidget);
+    });
+
+    testWidgets('_lastTile resets when path changes (no bleed-through)',
+        (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+
+      final container = await _pump(
+        tester,
+        playback: playback,
+        keyResolver: (key) {
+          if (key.path == '/tmp/x.m4b') {
+            return Future.value(const WaveformTilePeaks(
+              tileStart: Duration.zero,
+              tileDuration: Duration(seconds: 24),
+              peaks: [0.5, 0.5, 0.5],
+            ));
+          }
+          return Completer<WaveformTilePeaks>().future;
+        },
+      );
+
+      // Open a different path. The _StubBookbinder returns the same
+      // audiobook regardless of path, but the path-change listener in
+      // WaveformView should null out _lastTile, and the new path's
+      // tile lookup never resolves — so the loading indicator must
+      // reappear.
+      await container.read(editorProvider.notifier).open('/tmp/y.m4b');
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Generating waveform…'), findsOneWidget);
+    });
+
+    testWidgets('prefetches the next tile while playing', (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+
+      final queriedKeys = <WaveformTileKey>[];
+      final container = await _pump(
+        tester,
+        playback: playback,
+        keyResolver: (key) {
+          queriedKeys.add(key);
+          return Future.value(const WaveformTilePeaks(
+            tileStart: Duration.zero,
+            tileDuration: Duration(seconds: 24),
+            peaks: [0.5, 0.5, 0.5],
+          ));
+        },
+      );
+      // Initial mount, paused: only the current tile (tileIndex 0)
+      // should be queried so far.
+      expect(queriedKeys.map((k) => k.tileIndex).toSet(), equals({0}));
+
+      // Start playing. The widget should rebuild and add a watch on
+      // tileIndex + 1 = 1.
+      playback.emitPlaying(true);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        queriedKeys.map((k) => k.tileIndex).toSet(),
+        equals({0, 1}),
+      );
+      // Sanity: container still alive so the watches are real.
+      expect(container.read(editorProvider).path, '/tmp/x.m4b');
+    });
+
+    testWidgets('does not prefetch while paused', (tester) async {
+      final playback = _FakePlayback();
+      addTearDown(playback.dispose);
+
+      final queriedKeys = <WaveformTileKey>[];
+      await _pump(
+        tester,
+        playback: playback,
+        keyResolver: (key) {
+          queriedKeys.add(key);
+          return Future.value(const WaveformTilePeaks(
+            tileStart: Duration.zero,
+            tileDuration: Duration(seconds: 24),
+            peaks: [0.5, 0.5, 0.5],
+          ));
+        },
+      );
+
+      expect(queriedKeys.map((k) => k.tileIndex).toSet(), equals({0}));
+    });
   });
 }
